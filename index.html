@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Webex Contact Center · AI Cost Calculator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --wx: #00cf64; --wx-d: #009e4e; --ink: #0b1220; }
+  body { background:#f6f8fb; color:var(--ink); }
+  .card { background:#fff; border:1px solid #e6eaf0; border-radius:14px; }
+  .tp { cursor:pointer; transition:.15s; }
+  .tp:hover .tp-box { stroke:var(--wx-d); stroke-width:2.5; filter:drop-shadow(0 3px 6px rgba(0,0,0,.12)); }
+  .tp-off .tp-box { opacity:.35; stroke-dasharray:5 4; }
+  .num { width:100%; }
+  input[type=number], select { border:1px solid #d3dae4; border-radius:8px; padding:6px 8px; background:#fff; }
+  input[type=number]:focus, select:focus { outline:2px solid var(--wx); border-color:var(--wx); }
+  .pill { font-size:11px; padding:2px 8px; border-radius:999px; background:#eef7f0; color:var(--wx-d); border:1px solid #cdebd6; }
+  .badge-yes { color:var(--wx-d); font-weight:700; }
+  .badge-no { color:#c1c9d4; }
+  details>summary { cursor:pointer; list-style:none; }
+  details>summary::-webkit-details-marker { display:none; }
+  .flash { animation: fl 1.1s ease; }
+  @keyframes fl { 0%{ background:#d7f7e4;} 100%{ background:transparent;} }
+  .modal-bg { background:rgba(6,12,24,.5); }
+  input.changed { border-color:#f59e0b !important; background:#fff7ed; }
+  .revert-btn { color:#f59e0b; font-size:12px; line-height:1; border:none; background:none; cursor:pointer; padding:0 2px; }
+  .revert-btn:hover { color:#b45309; }
+  .revert-btn.hidden { display:none; }
+  .info { color:#94a3b8; cursor:help; font-size:12px; user-select:none; }
+  .info:hover { color:#475569; }
+  .tool-btn { font-size:12px; font-weight:600; padding:5px 10px; border-radius:8px; border:1px solid #d3dae4; background:#fff; cursor:pointer; }
+  .tool-btn:hover { background:#f1f5f9; }
+  .tool-btn.primary { background:var(--wx); color:#fff; border-color:var(--wx); }
+  .tool-btn.primary:hover { background:var(--wx-d); }
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<header class="bg-white border-b border-[#e6eaf0]">
+  <div class="w-full px-6 py-4 flex items-center gap-3">
+    <div class="w-9 h-9 rounded-lg flex items-center justify-center text-white font-black" style="background:var(--wx)">AI</div>
+    <div>
+      <h1 class="text-lg font-bold leading-tight">Webex Contact Center — AI Cost Calculator</h1>
+      <p class="text-xs text-slate-500">Estimate monthly AI spend across voice, chat and email flows. Click any AI touchpoint in a diagram for details.</p>
+    </div>
+    <button type="button" id="btnWizard" class="ml-auto tool-btn primary">⚙ Setup wizard</button>
+  </div>
+</header>
+
+<!-- Disclaimer -->
+<div class="w-full px-6 mt-4">
+  <div class="rounded-xl border border-amber-200 bg-amber-50 text-amber-900 px-4 py-3 text-sm">
+    <b>Pricing disclaimer.</b> Third-party AI rates (OpenAI, Google, etc.) are approximate public list prices as of <b>July 2026</b> and change often.
+    <b>Cisco Webex CC AI prices are not published</b> and are shown here only as editable placeholders — always confirm your negotiated rates with your Cisco account team.
+    All values in the <b>Pricing assumptions</b> panel are editable.
+  </div>
+</div>
+
+<main class="w-full px-6 py-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+  <!-- LEFT: flows + inputs (2 cols) -->
+  <div class="xl:col-span-2 space-y-6">
+
+    <!-- ============ STEP 1: DATA INPUTS ============ -->
+    <section class="card p-5">
+      <div class="flex items-center gap-2 mb-1 flex-wrap">
+        <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style="background:var(--wx)">1</span>
+        <h2 class="font-bold text-base">Data inputs &amp; volumes</h2>
+        <div class="ml-auto flex items-center gap-2">
+          <button type="button" class="tool-btn" id="btnSave">↓ Save</button>
+          <button type="button" class="tool-btn" id="btnLoad">↑ Load</button>
+          <button type="button" class="tool-btn" id="btnResetAll">↺ Reset all</button>
+          <input type="file" id="fileLoad" accept="application/json,.json" class="hidden">
+        </div>
+      </div>
+      <p class="text-xs text-slate-500 mb-4">Enter your monthly traffic and durations per channel. Every cost below is derived from these numbers. Changed fields are highlighted — use ↺ to revert a field to its default.</p>
+      <div id="inputSections" class="space-y-6"></div>
+    </section>
+
+    <!-- ============ STEP 2: SCENARIO SETUP ============ -->
+    <div class="flex items-center gap-2 pt-1">
+      <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style="background:var(--wx)">2</span>
+      <div>
+        <h2 class="font-bold text-base">Scenario setup — AI touchpoints per flow</h2>
+        <p class="text-xs text-slate-500">Toggle the AI features you plan to use and choose a provider for each. Click any box in a diagram for billing details.</p>
+      </div>
+    </div>
+
+    <!-- Voice -->
+    <section class="card p-5" data-channel="voice">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold text-base">🎙️ Inbound voice flow</h2>
+        <span class="text-sm font-semibold" data-subtotal="voice">—</span>
+      </div>
+      <div id="diagram-voice" class="overflow-x-auto pb-2"></div>
+      <div class="mt-4 space-y-2" data-touchpoints="voice"></div>
+    </section>
+
+    <!-- Outbound -->
+    <section class="card p-5" data-channel="outbound">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold text-base">📢 Outbound voice campaign <span class="text-xs font-normal text-slate-500">(progressive dialer · IVR · voicebot)</span></h2>
+        <span class="text-sm font-semibold" data-subtotal="outbound">—</span>
+      </div>
+      <div id="diagram-outbound" class="overflow-x-auto pb-2"></div>
+      <div class="mt-4 space-y-2" data-touchpoints="outbound"></div>
+    </section>
+
+    <!-- Chat -->
+    <section class="card p-5" data-channel="chat">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold text-base">💬 Digital / chat flow <span class="text-xs font-normal text-slate-500">(web · in-app · WhatsApp · Apple · RCS · SMS)</span></h2>
+        <span class="text-sm font-semibold" data-subtotal="chat">—</span>
+      </div>
+      <div id="diagram-chat" class="overflow-x-auto pb-2"></div>
+      <div class="mt-4 space-y-2" data-touchpoints="chat"></div>
+    </section>
+
+    <!-- Email -->
+    <section class="card p-5" data-channel="email">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-bold text-base">✉️ Email flow</h2>
+        <span class="text-sm font-semibold" data-subtotal="email">—</span>
+      </div>
+      <div id="diagram-email" class="overflow-x-auto pb-2"></div>
+      <div class="mt-4 space-y-2" data-touchpoints="email"></div>
+    </section>
+
+    <!-- Agent subscriptions -->
+    <section class="card p-5" data-channel="subs">
+      <div class="flex items-center justify-between mb-1">
+        <h2 class="font-bold text-base">🧑‍💼 Agent-facing Webex AI (consumption Units)</h2>
+        <span class="text-sm font-semibold" data-subtotal="subs">—</span>
+      </div>
+      <p class="text-xs text-slate-500 mb-3">Agent-facing Webex AI is billed as <b>consumption Units</b> (not per seat): <b>1 Unit = 1,500 covered agent-voice minutes</b> or <b>1,000 covered digital sessions</b>, rounded up. The coverage below is <b>taken from the scenario</b> — enable <b>AI Assistant</b> and/or <b>AI QM</b> on the flow diagrams; enabling both applies the discounted <b>bundle</b> price. Choose <b>Committed</b> or <b>Overage</b> pricing in the Results panel. Coverage &amp; human AHT are set in the inputs above.</p>
+      <div class="mt-1 space-y-2" data-touchpoints="subs"></div>
+    </section>
+
+    <!-- Webex Unit formulas -->
+    <section class="card p-5">
+      <details open>
+        <summary class="font-bold text-base flex items-center justify-between">
+          <span>📐 Webex Unit calculation formulas</span>
+          <span class="pill">live</span>
+        </summary>
+        <div id="formulaBox" class="mt-3 text-sm space-y-4"></div>
+      </details>
+    </section>
+
+    <!-- Capability matrix -->
+    <section class="card p-5">
+      <h2 class="font-bold text-base mb-1">AI capability matrix</h2>
+      <p class="text-xs text-slate-500 mb-3">What each provider can do across the flow roles (scripted agent, autonomous/LLM agent, agent assistant, QM/topic analytics) and the supporting capabilities. Use it to pick the right AI for each touchpoint.</p>
+      <div class="overflow-x-auto"><table class="w-full text-sm" id="capMatrix"></table></div>
+      <p class="text-xs text-slate-500 mt-3">Within Webex Contact Center, <b>Agent Assistant</b> (aware of the live customer conversation), <b>Real-time transcript</b> and <b>Topic detection</b> are provided exclusively by <b>Webex AI Assistant</b>, and <b>Quality Management</b> exclusively by <b>Webex AI QM</b>. Other AIs can only act as <b>“chat with the knowledge base”</b> — they don’t have the context of the current customer conversation.</p>
+    </section>
+
+    <!-- Pricing assumptions -->
+    <section class="card p-5">
+      <details>
+        <summary class="font-bold text-base flex items-center justify-between">
+          <span>💲 Pricing assumptions (editable)</span>
+          <span class="pill">click to expand</span>
+        </summary>
+        <p class="text-xs text-slate-500 mt-2 mb-3">Override any rate to match your quotes. Webex figures are placeholders.</p>
+        <div id="ratesPanel" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+      </details>
+    </section>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div class="xl:col-span-1">
+    <div class="sticky top-4 space-y-4">
+      <section class="card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style="background:var(--wx)">3</span>
+          <h2 class="font-bold text-base">Results — estimated cost</h2>
+        </div>
+        <div class="rounded-xl p-4 text-white" style="background:linear-gradient(135deg,var(--wx),var(--wx-d))">
+          <div class="text-xs opacity-90">Total per month</div>
+          <div class="text-3xl font-black" id="totalMonthly">—</div>
+          <div class="text-xs opacity-90 mt-1">≈ <span id="totalAnnual">—</span> / year</div>
+        </div>
+        <div class="flex items-center gap-2 mt-3 text-xs">
+          <span class="text-slate-500">Webex pricing:</span>
+          <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+            <button type="button" data-commit="commit" class="px-3 py-1 font-semibold" id="btnCommit">Committed</button>
+            <button type="button" data-commit="overage" class="px-3 py-1 font-semibold border-l border-slate-200" id="btnOverage">Overage</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-2 text-center">
+          <div class="rounded-lg border border-slate-200 p-2"><div class="text-[10px] leading-tight text-slate-500">AI Agent Units</div><div class="font-bold text-lg" id="uAgent">0</div></div>
+          <div class="rounded-lg border border-slate-200 p-2"><div class="text-[10px] leading-tight text-slate-500" id="uAgentAiLabel">AI Assistant + QM Units</div><div class="font-bold text-lg" id="uAgentAi">0</div></div>
+        </div>
+        <p class="text-[11px] text-slate-400 mt-1">Units = the quantity Cisco bills. × your Committed / Overage price per Unit → cost.</p>
+        <div class="mt-4"><canvas id="chart" height="180"></canvas></div>
+        <div id="resultRows" class="mt-4 space-y-1 text-sm"></div>
+        <div class="mt-3 pt-3 border-t text-xs text-slate-500" id="perInteraction"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<!-- Touchpoint modal -->
+<div id="modal" class="fixed inset-0 modal-bg hidden items-center justify-center p-4 z-50">
+  <div class="card max-w-md w-full p-5">
+    <div class="flex items-start justify-between gap-4">
+      <h3 class="font-bold text-lg" id="mTitle"></h3>
+      <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+    </div>
+    <div id="mCaps" class="flex flex-wrap gap-1 mt-2"></div>
+    <p class="text-sm text-slate-600 mt-3" id="mDesc"></p>
+    <div class="mt-3 rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm">
+      <div class="font-semibold text-xs uppercase tracking-wide text-slate-500 mb-1">How it's billed</div>
+      <div id="mBilling"></div>
+    </div>
+    <label class="flex items-center gap-2 mt-4 text-sm"><input type="checkbox" id="mToggle"> Include this touchpoint in the estimate</label>
+  </div>
+</div>
+
+<!-- Setup wizard -->
+<div id="wizard" class="fixed inset-0 modal-bg hidden items-center justify-center p-4 z-50">
+  <div class="card max-w-2xl w-full flex flex-col" style="max-height:90vh">
+    <div class="p-5 border-b border-slate-200 flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center text-white font-black" style="background:var(--wx)">AI</div>
+      <div>
+        <h3 class="font-bold text-lg leading-tight" id="wizTitle">Setup wizard</h3>
+        <p class="text-xs text-slate-500" id="wizStepInfo">Step 1</p>
+      </div>
+      <button onclick="closeWizard()" class="ml-auto text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+    </div>
+    <div class="px-5 pt-3">
+      <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div id="wizBar" class="h-full" style="background:var(--wx);width:0%"></div></div>
+    </div>
+    <div class="p-5 overflow-y-auto" id="wizBody"></div>
+    <div class="p-4 border-t border-slate-200 flex items-center gap-2">
+      <button type="button" class="tool-btn" id="wizSkip">Skip</button>
+      <div class="ml-auto flex gap-2">
+        <button type="button" class="tool-btn" id="wizBack">← Back</button>
+        <button type="button" class="tool-btn primary" id="wizNext">Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import migration modal -->
+<div id="migrateModal" class="fixed inset-0 modal-bg hidden items-center justify-center p-4 z-50">
+  <div class="card max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="p-5 border-b border-slate-200 flex items-center gap-3">
+      <h3 class="font-bold text-lg leading-tight">Imported file needs a few values</h3>
+      <button onclick="closeMigrate()" class="ml-auto text-slate-400 hover:text-slate-700 text-xl leading-none">&times;</button>
+    </div>
+    <div class="p-5 overflow-y-auto" id="migrateBody"></div>
+    <div class="p-4 border-t border-slate-200 flex justify-end">
+      <button type="button" class="tool-btn primary" id="migrateApply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<footer class="w-full px-6 py-8 text-center text-xs text-slate-400">
+  Single-file estimator · figures are indicative only · verify all pricing with the respective vendor.
+</footer>
+
+<script>
+/* ============================ CONFIG ============================ */
+const CAPS = {
+  scripted:'Scripted agent (IVR / flow)',
+  autonomous:'Autonomous agent (LLM)',
+  assist:'Agent Assistant (live conversation)',
+  transcript:'Real-time transcript',
+  topic:'Topic detection',
+  qm:'Quality Management',
+  kb:'Integrated knowledge base',
+  attach:'Attachment / file handling',
+  vision:'Image / vision (OCR)',
+  stt:'Speech-to-text',
+  tts:'Text-to-speech',
+  actions:'Autonomous actions / tools'
+};
+
+const PROVIDERS = {
+  webexAgent:{ name:'Webex AI Agent', caps:['scripted','autonomous','kb','stt','tts','actions'],
+    rates:{ commit:100, overage:115 } },
+  webexAssistant:{ name:'Webex AI Assistant', caps:['assist','transcript','topic','kb','stt'],
+    rates:{ commit:30, overage:34.5 } },
+  webexQM:{ name:'Webex AI QM', caps:['qm','stt'],
+    rates:{ commit:30, overage:34.5 } },
+  webexBundle:{ name:'Webex AI Assistant + QM (bundle)', caps:['assist','transcript','topic','qm','kb','stt'],
+    rates:{ commit:50, overage:57.5 } },
+  openai:{ name:'OpenAI', caps:['autonomous','kb','attach','vision','stt','tts','actions'],
+    rates:{ inPer1M:2.5, outPer1M:10, sttPerMin:0.006, ttsPerMchar:15, visionPerImage:0.004 } },
+  google:{ name:'Google Gemini', caps:['autonomous','kb','attach','vision','stt','tts','actions'],
+    rates:{ inPer1M:0.30, outPer1M:2.5, sttPerMin:0.016, ttsPerMchar:10, visionPerImage:0.002 } },
+  googleCcai:{ name:'Google CCAI — Dialogflow CX (via Cisco)', caps:['scripted','autonomous','kb','stt','tts','actions'],
+    rates:{ vaFlowsVoicePerSec:0.001, vaFlowsRequest:0.007, vaVoicePerSec:0.002, vaRequest:0.012 } },
+  anthropic:{ name:'Anthropic Claude', caps:['autonomous','kb','attach','vision','actions'],
+    rates:{ inPer1M:3, outPer1M:15, visionPerImage:0.004 } },
+  azure:{ name:'Azure OpenAI', caps:['autonomous','kb','attach','vision','stt','tts','actions'],
+    rates:{ inPer1M:2.5, outPer1M:10, sttPerMin:0.0167, ttsPerMchar:15, visionPerImage:0.004 } },
+  aws:{ name:'AWS (Transcribe/Polly/Comprehend)', caps:['vision','stt','tts'],
+    rates:{ sttPerMin:0.024, ttsPerMchar:16, visionPerImage:0.001 } },
+  deepgram:{ name:'Deepgram (STT)', caps:['stt'], rates:{ sttPerMin:0.0043 } },
+  elevenlabs:{ name:'ElevenLabs (STT/TTS)', caps:['stt','tts'], rates:{ sttPerMin:0.0067, ttsPerMchar:100 } },
+  byova:{ name:'Bring Your Own Virtual Agent (Universal Harness)', caps:['scripted','autonomous','kb','stt','tts','actions'],
+    rates:{ connectorPerMin:0.02, byoPerMin:0.06 } }
+};
+
+const RATE_LABELS = {
+  commit:'Committed price ($ / Unit)',
+  overage:'Overage price ($ / Unit)',
+  vaFlowsVoicePerSec:'CCAI Flows/scripted voice ($ / sec)',
+  vaFlowsRequest:'CCAI Flows/scripted chat ($ / request)',
+  vaVoicePerSec:'CCAI Playbooks/LLM voice ($ / sec)',
+  vaRequest:'CCAI Playbooks/LLM chat ($ / request)',
+  connectorPerMin:'Universal Harness connector ($ / min, via Cisco)',
+  byoPerMin:'Your own bot vendor ($ / min)',
+  inPer1M:'LLM input ($ / 1M tokens)',
+  outPer1M:'LLM output ($ / 1M tokens)',
+  sttPerMin:'Speech-to-text ($ / min)',
+  ttsPerMchar:'Text-to-speech ($ / 1M chars)',
+  visionPerImage:'Vision / OCR ($ / image)'
+};
+
+// Webex AI "Unit" conversion factors (Cisco Collaboration Flex 3.0 / Webex AI Resources Calculator).
+// Voice metered in minutes, digital in sessions (1 session = 10 inbound customer messages). Units rounded UP.
+const UNIT = {
+  scriptedVoiceMin:1600,      // AI Agent: 1 Unit = 1,600 scripted voice minutes
+  autonomousVoiceMin:250,     // AI Agent: 1 Unit = 250 autonomous (LLM) voice minutes
+  scriptedDigitalSess:4800,   // AI Agent: 1 Unit = 4,800 scripted digital sessions
+  autonomousDigitalSess:200,  // AI Agent: 1 Unit = 200 autonomous (LLM) digital sessions
+  assistVoiceMin:1500,        // AI Assistant/QM: 1 Unit = 1,500 covered agent-voice minutes
+  assistDigitalSess:1000      // AI Assistant/QM: 1 Unit = 1,000 covered digital sessions
+};
+
+// Input field definitions
+const INPUTS = {
+  currency:{ v:1, hidden:true },
+  // global
+  charsPerToken:{ label:'Chars per token', v:4, group:'global', step:0.5, info:'Assumed characters per LLM token (~4). Used by the token guesstimator to convert speech duration into tokens.' },
+  // inbound voice
+  voiceCalls:{ label:'Voice calls / month', v:20000, group:'voice', info:'Total inbound voice calls per month that enter the AI voicebot.' },
+  voiceFwd:{ label:'% forwarded to agent', v:65, group:'voice', suffix:'%', info:'Share of calls forwarded to a human agent (the rest are self-served by the bot). Drives AI Assistant / QM usage and matches the flow diagram.' },
+  avgScriptedSec:{ label:'Scripted secs / call', v:40, group:'voice', info:'Average seconds per call spent in the scripted (IVR/flow) bot. Drives scripted-voice Units / CCAI Flows cost.' },
+  avgAutonomousSec:{ label:'Autonomous secs / call', v:60, group:'voice', info:'Average seconds per call spent in the autonomous (LLM) voicebot. Drives autonomous-voice Units / CCAI Playbooks / 3rd-party cost.' },
+  voiceBotInTok:{ label:'Bot LLM input tok / call', v:1500, group:'voice', info:'Average LLM input tokens per call for a token-priced 3rd-party voicebot (OpenAI/Gemini/Azure). Ignored for Webex/CCAI/BYOVA. Tip: use ✨ Guesstimate.' },
+  voiceBotOutTok:{ label:'Bot LLM output tok / call', v:400, group:'voice', info:'Average LLM output tokens per call for a token-priced 3rd-party voicebot. Ignored for Webex/CCAI/BYOVA.' },
+  voiceBotTtsChars:{ label:'Bot TTS chars / call', v:600, group:'voice', info:'Average text-to-speech characters the bot speaks per call, for token/character-priced 3rd-party voicebots.' },
+  voiceAssistTok:{ label:'Agent KB-chat tok / call', v:1200, group:'voice', info:'Tokens per escalated call for the optional 3rd-party agent KB-chat (knowledge-base answers, not conversation-aware).' },
+  // outbound voice campaign
+  obCalls:{ label:'Connected calls / month', v:12000, group:'outbound', info:'Outbound campaign calls per month that connect and reach the voicebot.' },
+  obAutonomousSec:{ label:'Voicebot secs / call', v:45, group:'outbound', info:'Average seconds per connected call spent with the outbound autonomous voicebot.' },
+  obTransferPct:{ label:'% forwarded to agent', v:80, group:'outbound', suffix:'%', info:'Share of connected calls handed to a live agent. Drives AI Assistant / QM usage.' },
+  obBotInTok:{ label:'Bot LLM input tok / call', v:1000, group:'outbound', info:'Average LLM input tokens per call for a token-priced 3rd-party outbound voicebot. Ignored for Webex/CCAI/BYOVA.' },
+  obBotOutTok:{ label:'Bot LLM output tok / call', v:300, group:'outbound', info:'Average LLM output tokens per call for a token-priced 3rd-party outbound voicebot.' },
+  obBotTtsChars:{ label:'Bot TTS chars / call', v:500, group:'outbound', info:'Average TTS characters spoken per call for a 3rd-party outbound voicebot.' },
+  obAssistTok:{ label:'Agent KB-chat tok / call', v:1000, group:'outbound', info:'Tokens per transferred call for optional 3rd-party agent KB-chat.' },
+  // chat
+  chatVolume:{ label:'Chats / month', v:15000, group:'chat', info:'Total digital/chat interactions per month across all channels (web, app, WhatsApp, Apple, RCS, SMS).' },
+  chatFwd:{ label:'% forwarded to agent', v:55, group:'chat', suffix:'%', info:'Share of chats forwarded to a human agent (the rest are self-served by the bot). Drives AI Assistant / QM usage and matches the flow diagram.' },
+  avgCustomerMsgs:{ label:'Customer msgs / chat', v:10, group:'chat', info:'Average customer-side messages per chat handled by the bot. 1 Webex AI Agent digital session = 10 customer messages (agent/Webex messages are not counted). Keep it a multiple of 10 to optimise Unit consumption.' },
+  chatAutoMix:{ label:'Autonomous digital %', v:35, group:'chat', suffix:'%', info:'Share of digital sessions handled by the autonomous (LLM) bot vs the scripted (flow) bot. Splits sessions between the two bot Unit rates.' },
+  tokensPerMsg:{ label:'Tokens / message', v:40, group:'chat', info:'Average tokens per chat message, for token-priced 3rd-party autonomous chatbots. Ignored for Webex/CCAI.' },
+  chatAssistTok:{ label:'Agent KB-chat tok / chat', v:1000, group:'chat', info:'Tokens per escalated chat for the optional 3rd-party agent KB-chat.' },
+  // email
+  emailVolume:{ label:'Emails / month', v:8000, group:'email', info:'Total inbound emails per month processed by AI.' },
+  avgEmailInTok:{ label:'Email input tokens', v:800, group:'email', info:'Average tokens of email content fed to the AI (classification, auto-response, summary, suggestion).' },
+  avgResponseTok:{ label:'Response tokens', v:350, group:'email', info:'Average tokens of a generated / suggested reply.' },
+  avgSummaryTok:{ label:'Summary tokens', v:150, group:'email', info:'Average tokens of the email summary shown to the agent for forwarded emails.' },
+  pctWithAttach:{ label:'% with attachments', v:30, group:'email', suffix:'%', info:'Share of emails that include one or more attachments to analyse with vision/OCR.' },
+  avgAttach:{ label:'Attachments / email', v:1.5, group:'email', step:0.1, info:'Average number of attachments on emails that have attachments.' },
+  avgAttachSizeMB:{ label:'Avg attachment size (MB)', v:1.2, group:'email', step:0.1, info:'Average attachment size. Larger files span more pages/images, increasing vision/OCR cost.' },
+  mbPerPage:{ label:'MB per analysed page', v:0.5, group:'email', step:0.1, info:'How many MB correspond to one analysed page/image. Pages = max(1, avg size MB ÷ this). Each page is charged as one vision image.' },
+  pctAutoHandled:{ label:'% handled automatically', v:40, group:'email', suffix:'%', info:'Share of emails fully resolved by AI (auto-response generated, never reaches an agent).' },
+  pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. Drives summary + suggested-response + optimisation AI cost.' },
+  // human-agent coverage (AI Assistant / AI QM Units)
+  voiceHumanAht:{ label:'Human voice AHT (sec)', v:420, group:'coverage', info:'Average handle time (seconds) of an escalated/transferred call once a human agent takes it. Drives AI Assistant / QM voice minutes.' },
+  avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'coverage', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / QM digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
+  assistCoverage:{ label:'AI Assistant/QM coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions covered by AI Assistant / QM. Multiplies the covered minutes/sessions before converting to Units.' }
+};
+
+// Touchpoints
+const TP = [
+  // --- VOICE ---
+  { id:'v_scripted', channel:'voice', label:'Scripted voicebot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai','byova'],
+    billing:'Deterministic IVR/flow agent. <b>Webex AI Agent</b>: Units — 1 Unit = 1,600 scripted voice minutes. <b>Google CCAI — Dialogflow CX Flows</b>: per voice second (~$0.001/s), billed via Cisco. <b>BYOVA (Universal Harness)</b>: Webex connector $/min + your own vendor $/min.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.voiceCalls*c.avgScriptedSec/60; const units=Math.ceil(min/UNIT.scriptedVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.voiceCalls*c.avgScriptedSec*(r.vaFlowsVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.voiceCalls*(c.avgScriptedSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } return { cost:0 }; } },
+  { id:'v_autonomous', channel:'voice', label:'Autonomous voicebot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai','byova','openai','google','azure'],
+    billing:'LLM-based bot (prompt + actions), combinable with scripted in one call. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI — Dialogflow CX Playbooks</b> (generative): per voice second (~$0.002/s), billed via Cisco. <b>BYOVA (Universal Harness)</b>: Webex connector $/min + your own vendor $/min. Other 3rd-party: STT/min + LLM tokens + TTS chars.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.voiceCalls*c.avgAutonomousSec/60; const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.voiceCalls*c.avgAutonomousSec*(r.vaVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.voiceCalls*(c.avgAutonomousSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } const cost=c.voiceCalls*((c.avgAutonomousSec/60)*(r.sttPerMin||0)+tok(c.voiceBotInTok,c.voiceBotOutTok,r)+(c.voiceBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
+  { id:'v_assist', channel:'voice', label:'Agent KB chat (3rd-party)', on:false, prov:'openai',
+    providers:['openai','google','anthropic','azure'],
+    billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> — <i>not</i> aware of the live customer conversation. Native conversation-aware <b>Agent Assistant is Webex AI Assistant only</b>. Cost = escalated calls × KB-chat tokens.',
+    compute:(c,r,p)=>({ cost:c.voiceEscalated * tok(c.voiceAssistTok, c.voiceAssistTok*0.4, r) }) },
+
+  // --- OUTBOUND ---
+  { id:'o_autonomous', channel:'outbound', label:'Autonomous voicebot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai','byova','openai','google','azure'],
+    billing:'LLM voicebot for surveys / reminders / collections. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI (via Cisco)</b>: per voice second (~$0.002/s), billed through Cisco. <b>Bring Your Own Virtual Agent (Universal Harness)</b>: Webex connector $/min (via Cisco) + your own vendor $/min. Other 3rd-party: STT/min + LLM tokens + TTS chars.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.obCalls*c.obAutonomousSec/60; const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.obCalls*c.obAutonomousSec*(r.vaVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.obCalls*(c.obAutonomousSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } const cost=c.obCalls*((c.obAutonomousSec/60)*(r.sttPerMin||0)+tok(c.obBotInTok,c.obBotOutTok,r)+(c.obBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
+  { id:'o_assist', channel:'outbound', label:'Agent KB chat (3rd-party)', on:false, prov:'openai',
+    providers:['openai','google','anthropic','azure'],
+    billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> for transferred calls — <i>not</i> aware of the live conversation. Conversation-aware Agent Assistant is Webex AI Assistant only. Cost = transferred calls × KB-chat tokens.',
+    compute:(c,r,p)=>({ cost:c.obTransferred * tok(c.obAssistTok, c.obAssistTok*0.4, r) }) },
+
+  // --- CHAT ---
+  { id:'c_scripted', channel:'chat', label:'Scripted chatbot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai'],
+    billing:'Deterministic flow agent on the scripted share of chats. <b>Webex AI Agent</b>: Units — 1 Unit = 4,800 scripted sessions (1 session = 10 customer msgs). <b>Google CCAI — Dialogflow CX Flows</b>: per request/turn (~$0.007/turn), billed via Cisco.',
+    compute:(c,r,p)=>{ if(p==='googleCcai'){ const turns=c.chatVolume*(1-c.chatAutoMix/100)*c.avgCustomerMsgs; return { cost:turns*(r.vaFlowsRequest||0) }; } const sess=c.chatSessions*(1-c.chatAutoMix/100); const units=Math.ceil(sess/UNIT.scriptedDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } },
+  { id:'c_autonomous', channel:'chat', label:'Autonomous chatbot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai','openai','google','anthropic','azure'],
+    billing:'<b>Webex AI Agent: 1 Unit = 200 autonomous digital sessions</b> (1 session = 10 customer msgs). <b>Google CCAI — Dialogflow CX Playbooks</b> (generative): per request/turn (~$0.012/turn), billed via Cisco. Other 3rd-party: per token, on the autonomous share of chats.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const sess=c.chatSessions*(c.chatAutoMix/100); const units=Math.ceil(sess/UNIT.autonomousDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ const turns=c.chatVolume*(c.chatAutoMix/100)*c.avgCustomerMsgs; return { cost:turns*(r.vaRequest||0) }; } const inter=c.chatVolume*(c.chatAutoMix/100); const cost=inter*tok(c.avgCustomerMsgs*c.tokensPerMsg, c.avgCustomerMsgs*c.tokensPerMsg, r); return { cost }; } },
+  { id:'c_assist', channel:'chat', label:'Agent KB chat (3rd-party)', on:false, prov:'openai',
+    providers:['openai','google','anthropic','azure'],
+    billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> for escalated chats — <i>not</i> aware of the live conversation. Conversation-aware Agent Assistant is Webex AI Assistant only. Cost = escalated chats × KB-chat tokens.',
+    compute:(c,r,p)=>({ cost:c.chatEscalated * tok(c.chatAssistTok, c.chatAssistTok*0.4, r) }) },
+
+  // --- EMAIL ---
+  { id:'e_classify', channel:'email', label:'Classification / routing', on:true, prov:'webexAgent',
+    providers:['webexAgent','openai','google','anthropic','azure','aws'],
+    billing:'Detect intent/workflow. <b>Webex AI Agent</b>: <b>1 digital session per email</b>; 1 Unit = 200 sessions. 3rd-party: per token (input + small output). AWS uses Comprehend-style classification.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const units=Math.ceil(c.emailVolume/UNIT.autonomousDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } return { cost:c.emailVolume * tok(c.avgEmailInTok, 40, r) }; } },
+  { id:'e_attach', channel:'email', label:'Attachment / image analysis', on:true, prov:'google',
+    providers:['openai','google','azure','aws'],
+    billing:'Vision/OCR on attachments (e.g. utility meter readings, PDF invoices). Larger files span more pages/images, so cost scales with size. Cost = emails × %with-attachments × attachments × <b>pages</b> × $/image, where pages = max(1, avg size MB ÷ MB-per-page).',
+    compute:(c,r,p)=>({ cost:c.emailVolume * c.pctWithAttach * c.avgAttach * Math.max(1, c.avgAttachSizeMB/(c.mbPerPage||1)) * (r.visionPerImage||0) }) },
+  { id:'e_autoresp', channel:'email', label:'Auto-handling & response', on:true, prov:'webexAgent',
+    providers:['webexAgent','openai','google','anthropic','azure'],
+    billing:'Fully automated resolution + generated reply for emails handled automatically (never reach an agent). <b>Webex AI Agent</b>: <b>1 digital session per auto-handled email</b>; 1 Unit = 200 sessions. 3rd-party: emails × %auto-handled × (input + response tokens).',
+    compute:(c,r,p)=>{ const n=c.emailVolume*c.pctAutoHandled; if(p==='webexAgent'){ const units=Math.ceil(n/UNIT.autonomousDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } return { cost:n * tok(c.avgEmailInTok, c.avgResponseTok, r) }; } },
+  { id:'e_summary', channel:'email', label:'Email summary (forwarded only)', on:true, prov:'webexAgent',
+    providers:['webexAgent','openai','google','anthropic','azure'],
+    billing:'Concise summary of the email <b>before it is delivered to the agent</b> — forwarded emails only, a distinct action from the suggested response. <b>Webex AI Agent</b>: <b>1 digital session per forwarded email</b>; 1 Unit = 200 sessions. 3rd-party: forwarded emails × (input + summary tokens).',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const units=Math.ceil(c.emailEscalated/UNIT.autonomousDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } return { cost:c.emailEscalated * tok(c.avgEmailInTok, c.avgSummaryTok, r) }; } },
+  { id:'e_suggest', channel:'email', label:'Suggested response · KB (forwarded only)', on:true, prov:'webexAgent',
+    providers:['webexAgent','openai','google','anthropic','azure'],
+    billing:'Drafts a suggested reply grounded in the knowledge base, alongside the summary — a <b>separate action / session</b> from the summary (so a forwarded email consumes summary + suggestion as two sessions). <b>Webex AI Agent</b>: <b>1 digital session per forwarded email</b>; 1 Unit = 200 sessions. 3rd-party: forwarded emails × (input + response tokens); requires a KB-capable AI.',
+    compute:(c,r,p)=>{ if(p==='webexAgent'){ const units=Math.ceil(c.emailEscalated/UNIT.autonomousDigitalSess); return { units, product:'agent', cost:units*wxUnit(r) }; } return { cost:c.emailEscalated * tok(c.avgEmailInTok, c.avgResponseTok, r) }; } },
+  { id:'e_optimize', channel:'email', label:'Desktop response optimisation', on:true, prov:'openai',
+    providers:['openai','google','anthropic','azure'],
+    billing:'Agent refines the drafted reply (tone/clarity) on the desktop, after the summary/suggestion. Forwarded emails only. Not a Webex AI Agent function — uses a 3rd-party LLM. Cost = forwarded emails × (response tokens in + out).',
+    compute:(c,r,p)=>({ cost:c.emailEscalated * tok(c.avgResponseTok, c.avgResponseTok, r) }) },
+
+  // --- WEBEX AGENT-FACING AI (consumption Units) — pick Bundle / AI Assistant / AI QM ---
+  { id:'s_agentai', channel:'subs', label:'Agent-facing Webex AI (Units)', on:true, prov:'webexBundle',
+    providers:['webexBundle','webexAssistant','webexQM'],
+    billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI QM</b> on the flow diagrams &mdash; both applies the discounted <b>bundle</b> price, one uses that individual product price. AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI QM provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
+    compute:(c,r,p)=>({ units:c.assistUnits, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:c.assistUnits*wxUnit(r) }) }
+];
+
+/* ============================ STATE ============================ */
+// Providers the user can choose between across touchpoints (excludes the single-option
+// Webex AI Assistant / AI QM which are the only provider for their touchpoints).
+const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','openai','google','anthropic','azure','aws'];
+const SCHEMA_VERSION = 5;
+const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true };
+for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
+for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
+TP.forEach(t=>{ state.prov[t.id]=t.prov; state.on[t.id]=t.on; });
+
+/* ============================ HELPERS ============================ */
+const tok = (i,o,r)=> (i*(r.inPer1M||0)+o*(r.outPer1M||0))/1e6;
+// Active Webex Unit price from a {commit, overage} rate object, per the commit/overage toggle.
+const wxUnit = r => (state.commitMode==='overage' ? r.overage : r.commit) || 0;
+const fmt = n => '$'+ (n>=1000? n.toLocaleString('en-US',{maximumFractionDigits:0}) : n.toLocaleString('en-US',{maximumFractionDigits:2}));
+const CH_NAMES = { voice:'Inbound voice', outbound:'Outbound', chat:'Chat', email:'Email', subs:'AI Assistant / QM' };
+const CH_COLORS = { voice:'#00cf64', outbound:'#14b8a6', chat:'#2f6fed', email:'#f59e0b', subs:'#8b5cf6' };
+const CHANNELS = ['voice','outbound','chat','email','subs'];
+
+function ctx(){
+  const i = state.inp;
+  const c = {...i};
+  c.voiceEscalated = i.voiceCalls*(i.voiceFwd/100);
+  c.obTransferred  = i.obCalls*(i.obTransferPct/100);
+  c.chatSessions   = i.chatVolume*Math.ceil(i.avgCustomerMsgs/10);
+  c.chatEscalated  = i.chatVolume*(i.chatFwd/100);
+  c.pctWithAttach  = i.pctWithAttach/100;
+  c.pctAutoHandled = i.pctAutoHandled/100;
+  c.pctEscalated   = i.pctEscalated/100;
+  c.emailEscalated = i.emailVolume*(i.pctEscalated/100);
+  // AI Assistant / AI QM consumption units (covered human-handled interactions)
+  c.voiceHumanMin = (c.voiceEscalated + c.obTransferred) * (i.voiceHumanAht/60) * (i.assistCoverage/100);
+  c.digitalHumanSessions = c.chatEscalated * Math.ceil(i.avgAgentMsgs/10) * (i.assistCoverage/100);
+  c.assistUnits = Math.ceil(c.voiceHumanMin/UNIT.assistVoiceMin) + Math.ceil(c.digitalHumanSessions/UNIT.assistDigitalSess);
+  c.qmUnits = c.assistUnits; // bundled: same consumption base
+  return c;
+}
+
+/* ============================ CALC ============================ */
+function calc(){
+  const c = ctx();
+  const rows=[]; const byCh={voice:0,outbound:0,chat:0,email:0,subs:0};
+  const unitTotals={ agent:0, agentAi:0 };
+  TP.forEach(t=>{
+    if(!state.on[t.id]) return;
+    const p = state.prov[t.id];
+    const res = t.compute(c, state.rates[p], p) || {};
+    const cost = res.cost || 0;
+    byCh[t.channel]+=cost;
+    if(res.units && res.product){ unitTotals[res.product==='agent'?'agent':'agentAi']+=res.units; }
+    rows.push({ id:t.id, label:t.label, channel:t.channel, prov:PROVIDERS[p].name, cost, units:res.units });
+  });
+  const total = Object.values(byCh).reduce((a,b)=>a+b,0);
+  return { rows, byCh, total, unitTotals, c };
+}
+
+/* ============================ RENDER: inputs ============================ */
+function inputField(key){
+  const d=INPUTS[key];
+  const changed = state.inp[key] !== d.v;
+  return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1" data-field="${key}">
+    <span class="flex items-center gap-1">
+      ${d.label}
+      ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}
+      <button type="button" class="revert-btn ${changed?'':'hidden'}" data-revert="${key}" title="Revert to default (${d.v})">↺</button>
+    </span>
+    <input type="number" class="num ${changed?'changed':''}" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
+  </label>`;
+}
+function renderInputs(){
+  const order=['global','voice','outbound','chat','email','coverage'];
+  const labels={global:'Global assumptions',voice:'Inbound voice',outbound:'Outbound voice campaign',chat:'Digital / chat',email:'Email',coverage:'Human-agent coverage (AI Assistant / AI QM Units)'};
+  document.getElementById('inputSections').innerHTML = order.map(g=>{
+    const keys=Object.keys(INPUTS).filter(k=>INPUTS[k].group===g && !INPUTS[k].hidden);
+    const dot = (g==='global'||g==='coverage') ? '#8b5cf6' : CH_COLORS[g];
+    const guessBtn = (g==='voice'||g==='outbound')
+      ? `<button type="button" class="tool-btn ml-auto" data-guess="${g}" title="Estimate bot LLM tokens and TTS characters from the autonomous voicebot duration">✨ Guesstimate bot tokens</button>` : '';
+    return `<div>
+      <div class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${dot}"></span>${labels[g]}${guessBtn}
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">${keys.map(inputField).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================ RENDER: touchpoint rows ============================ */
+function capBadges(p){ return PROVIDERS[p].caps.map(c=>`<span class="pill">${CAPS[c]}</span>`).join(' '); }
+function tpRow(t){
+  let opts = t.providers.filter(p=> p.startsWith('webex') || state.allowedProviders.includes(p) || p===state.prov[t.id]);
+  if(!opts.length) opts=[...t.providers];
+  const optsHtml = opts.map(p=>`<option value="${p}" ${state.prov[t.id]===p?'selected':''}>${PROVIDERS[p].name}</option>`).join('');
+  const single = opts.length===1;
+  return `<div class="flex flex-wrap items-center gap-3 p-2 rounded-lg border border-slate-100 bg-slate-50/60" data-row="${t.id}">
+    <label class="flex items-center gap-2 text-sm font-medium min-w-[190px]">
+      <input type="checkbox" data-on="${t.id}" ${state.on[t.id]?'checked':''}>
+      <span class="tp-link cursor-pointer underline decoration-dotted" data-open="${t.id}">${t.label}</span>
+    </label>
+    <select data-prov="${t.id}" class="text-sm ${single?'opacity-70':''}" ${single?'disabled':''}>${optsHtml}</select>
+    <span class="ml-auto text-sm font-semibold" data-cost="${t.id}">—</span>
+  </div>`;
+}
+function renderTouchpoints(){
+  CHANNELS.forEach(ch=>{
+    const el=document.querySelector(`[data-touchpoints="${ch}"]`);
+    if(ch==='subs'){ el.innerHTML = agentAiSelectorHtml(); return; }
+    el.innerHTML = TP.filter(t=>t.channel===ch).map(tpRow).join('');
+  });
+}
+
+// Agent-facing coverage: two feature checkboxes. Both -> bundle price; one -> that product's price.
+function applyAgentAi(){
+  const a=state.needAssistant, q=state.needQm;
+  state.on['s_agentai'] = a||q;
+  state.prov['s_agentai'] = (a&&q) ? 'webexBundle' : (a ? 'webexAssistant' : 'webexQM');
+}
+function agentAiSelectorHtml(){
+  const a=state.needAssistant, q=state.needQm;
+  const mode=(a&&q)?'AI Assistant + QM (bundle)':(a?'AI Assistant only':(q?'AI QM only':'none — not included'));
+  return `<div class="p-2 rounded-lg border border-slate-100 bg-slate-50/60" data-row="s_agentai">
+    <div class="flex flex-wrap items-center gap-4">
+      <span class="text-sm font-medium">Coverage (from scenario):</span>
+      <label class="flex items-center gap-2 text-sm text-slate-500"><input type="checkbox" disabled ${a?'checked':''}> AI Assistant</label>
+      <label class="flex items-center gap-2 text-sm text-slate-500"><input type="checkbox" disabled ${q?'checked':''}> AI QM</label>
+      <span class="tp-link cursor-pointer underline decoration-dotted text-xs" data-open="s_agentai">how it's billed</span>
+      <span class="ml-auto text-sm font-semibold" data-cost="s_agentai">—</span>
+    </div>
+    <p class="text-xs text-slate-500 mt-1">Coverage: <b>${mode}</b> — set by enabling the <b>AI Assistant</b> / <b>AI QM</b> boxes in the flow diagrams above (click to toggle). Enabling both applies the discounted <b>bundle</b> price.</p>
+  </div>`;
+}
+
+/* ============================ RENDER: rates ============================ */
+function renderRates(){
+  const wrap=document.getElementById('ratesPanel');
+  wrap.innerHTML = Object.keys(PROVIDERS).map(p=>{
+    const r=PROVIDERS[p].rates;
+    const negotiated = p.startsWith('webex') || p==='googleCcai' || p==='byova';
+    const pill = p==='googleCcai' ? 'via Cisco (negotiated)' : p==='byova' ? 'BYO + Cisco connector' : (p.startsWith('webex') ? 'GPL' : '');
+    const fields=Object.keys(r).map(k=>`<label class="text-xs text-slate-600 flex items-center justify-between gap-2">
+      <span>${RATE_LABELS[k]||k}</span>
+      <input type="number" class="w-28" data-rate="${p}" data-key="${k}" value="${state.rates[p][k]}" step="any" min="0">
+    </label>`).join('');
+    return `<div class="rounded-lg border ${negotiated?'border-amber-200 bg-amber-50/40':'border-slate-200'} p-3">
+      <div class="font-semibold text-sm mb-2">${PROVIDERS[p].name} ${pill?`<span class="pill">${pill}</span>`:''}</div>
+      <div class="space-y-2">${fields}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================ RENDER: Webex Unit formulas ============================ */
+function renderFormulas(c){
+  const box=document.getElementById('formulaBox'); if(!box) return;
+  const n=x=>Math.round(x).toLocaleString('en-US');
+  const ce=Math.ceil;
+  const sVMin=c.voiceCalls*c.avgScriptedSec/60;
+  const aVMin=c.voiceCalls*c.avgAutonomousSec/60;
+  const oVMin=c.obCalls*c.obAutonomousSec/60;
+  const sSess=c.chatSessions*(1-c.chatAutoMix/100);
+  const aSess=c.chatSessions*(c.chatAutoMix/100);
+  const eAuto=c.emailVolume*c.pctAutoHandled;
+  const eEsc=c.emailEscalated;
+  box.innerHTML=`
+   <div>
+     <div class="font-semibold mb-1">Webex AI Agent — billed in Units (voice in minutes, digital in sessions; 1 session = 10 inbound customer messages)</div>
+     <ul class="space-y-1 text-slate-600 list-disc pl-5">
+       <li>Scripted voice — <b>1 Unit = 1,600 min</b>: &lceil; ${n(c.voiceCalls)} calls × ${n(c.avgScriptedSec)}s ÷ 60 ÷ 1,600 &rceil; = <b>${ce(sVMin/1600)} Units</b></li>
+       <li>Autonomous voice, inbound — <b>1 Unit = 250 min</b>: &lceil; ${n(aVMin)} min ÷ 250 &rceil; = <b>${ce(aVMin/250)} Units</b></li>
+       <li>Autonomous voice, outbound — <b>1 Unit = 250 min</b>: &lceil; ${n(oVMin)} min ÷ 250 &rceil; = <b>${ce(oVMin/250)} Units</b></li>
+       <li>Scripted digital — <b>1 Unit = 4,800 sessions</b>: &lceil; ${n(sSess)} ÷ 4,800 &rceil; = <b>${ce(sSess/4800)} Units</b></li>
+       <li>Autonomous digital — <b>1 Unit = 200 sessions</b>: &lceil; ${n(aSess)} ÷ 200 &rceil; = <b>${ce(aSess/200)} Units</b></li>
+       <li>Email — <b>1 session per email per action</b>, 1 Unit = 200 sessions: classify ${n(c.emailVolume)}, auto-handle ${n(eAuto)}, summary/suggestion ${n(eEsc)} each. A forwarded email = summary + suggestion = 2 sessions. (Desktop optimisation is 3rd-party, not AI Agent.)</li>
+     </ul>
+     <div class="text-xs text-slate-400 mt-1">Applies when the bot is Webex AI Agent. Google CCAI, BYOVA and token providers use their own rates instead.</div>
+   </div>
+   <div>
+     <div class="font-semibold mb-1">Webex agent-facing AI (Assistant / QM / Bundle) — consumption Units on human-handled interactions</div>
+     <ul class="space-y-1 text-slate-600 list-disc pl-5">
+       <li>Voice — <b>1 Unit = 1,500 covered agent-min</b>: &lceil; ${n(c.voiceHumanMin)} min ÷ 1,500 &rceil; = <b>${ce(c.voiceHumanMin/1500)} Units</b></li>
+       <li>Digital — <b>1 Unit = 1,000 covered sessions</b>: &lceil; ${n(c.digitalHumanSessions)} ÷ 1,000 &rceil; = <b>${ce(c.digitalHumanSessions/1000)} Units</b></li>
+       <li>Total agent-facing Units = <b>${c.assistUnits} Units</b> — priced at your chosen coverage (Bundle / Assistant / QM) × Committed or Overage rate.</li>
+     </ul>
+   </div>
+   <div class="text-xs text-slate-400">Covered agent-min = (escalated + transferred calls) × human AHT × coverage%. Covered sessions = escalated chats × &lceil;live-agent msgs ÷ 10&rceil; × coverage% (AI Assistant counts only the live-agent interaction). All Units are rounded up.</div>`;
+}
+
+/* ============================ RENDER: capability matrix ============================ */
+function renderMatrix(){
+  const provs=Object.keys(PROVIDERS).filter(p=>p!=='webexBundle');
+  let head='<tr class="text-left border-b"><th class="py-2 pr-3">Capability</th>'+
+    provs.map(p=>`<th class="py-2 px-2 text-center text-xs font-semibold">${PROVIDERS[p].name}</th>`).join('')+'</tr>';
+  let body=Object.keys(CAPS).map(cap=>{
+    return `<tr class="border-b border-slate-100"><td class="py-2 pr-3 font-medium">${CAPS[cap]}</td>`+
+      provs.map(p=>`<td class="text-center">${PROVIDERS[p].caps.includes(cap)?'<span class="badge-yes">✓</span>':'<span class="badge-no">–</span>'}</td>`).join('')+'</tr>';
+  }).join('');
+  document.getElementById('capMatrix').innerHTML=head+body;
+}
+
+/* ============================ DIAGRAMS ============================ */
+function node(x,y,w,label,sub,tpId){
+  const off = tpId && !state.on[tpId] ? 'tp-off' : '';
+  const cls = tpId ? `tp ${off}` : '';
+  const fill = tpId ? '#eef7f0' : '#fff';
+  const stroke = tpId ? '#00cf64' : '#cbd5e1';
+  const open = tpId ? `data-open="${tpId}"` : '';
+  return `<g class="${cls}" ${open}>
+    <rect class="tp-box" x="${x}" y="${y}" width="${w}" height="54" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="1.5"></rect>
+    <text x="${x+w/2}" y="${y+22}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0b1220">${label}</text>
+    <text x="${x+w/2}" y="${y+40}" text-anchor="middle" font-size="10.5" fill="#64748b">${sub||''}</text>
+  </g>`;
+}
+function arrow(x1,x2,y){ return `<line x1="${x1}" y1="${y}" x2="${x2-8}" y2="${y}" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></line>`; }
+// Feature node: AI Assistant / AI QM enablement, toggled from the scenario (dims when off).
+function fnode(x,y,w,label,sub,feat){
+  const on = feat==='assistant' ? state.needAssistant : state.needQm;
+  const off = on ? '' : 'tp-off';
+  const fill = on ? '#eef7f0' : '#fff';
+  return `<g class="tp ${off}" data-feat="${feat}">
+    <rect class="tp-box" x="${x}" y="${y}" width="${w}" height="54" rx="10" fill="${fill}" stroke="#00cf64" stroke-width="1.5"></rect>
+    <text x="${x+w/2}" y="${y+22}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#0b1220">${label}</text>
+    <text x="${x+w/2}" y="${y+40}" text-anchor="middle" font-size="10.5" fill="#64748b">${sub||''}</text>
+  </g>`;
+}
+function alabel(x,y,txt){ return `<text x="${x}" y="${y}" text-anchor="middle" font-size="10" font-weight="700" fill="#009e4e">${txt}</text>`; }
+function exitDown(x,yTop,txt){ return `<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yTop+16}" stroke="#cbd5e1" stroke-width="1.5" marker-end="url(#ar)"></line><text x="${x}" y="${yTop+29}" text-anchor="middle" font-size="9.5" fill="#94a3b8">${txt}</text>`; }
+const DEFS = `<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8"></path></marker></defs>`;
+
+function renderDiagrams(){
+  const i=state.inp;
+  const vFwd=Math.round(i.voiceFwd), cFwd=Math.round(i.chatFwd), oFwd=Math.round(i.obTransferPct);
+  const eAuto=Math.round(i.pctAutoHandled), eFwd=Math.round(i.pctEscalated);
+  // Voice
+  document.getElementById('diagram-voice').innerHTML =
+  `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
+    ${node(0,43,120,'📞 Caller','inbound call')}
+    ${arrow(120,150,70)}
+    ${node(150,12,150,'Scripted voicebot','Webex · Units','v_scripted')}
+    ${node(150,74,150,'Autonomous voicebot','Webex/3rd · Units','v_autonomous')}
+    ${exitDown(225,128,(100-vFwd)+'% self-served')}
+    ${arrow(300,370,70)}
+    ${alabel(335,60,vFwd+'% → agent')}
+    ${node(370,12,150,'👤 Live agent','human handling')}
+    ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
+    ${arrow(520,550,70)}
+    ${fnode(550,12,150,'AI Assistant','answers · topic','assistant')}
+    ${node(550,74,150,'Agent KB chat','3rd-party opt.','v_assist')}
+    ${arrow(700,730,70)}
+    ${fnode(730,43,150,'AI QM','quality mgmt','qm')}
+  </svg>`;
+  // Outbound (mirrors the inbound voice agent + assistant layout)
+  document.getElementById('diagram-outbound').innerHTML =
+  `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
+    ${node(0,43,120,'📢 Campaign','progressive dialer')}
+    ${arrow(120,150,70)}
+    ${node(150,43,150,'Autonomous voicebot','Webex/3rd · Units','o_autonomous')}
+    ${exitDown(225,97,(100-oFwd)+'% self-served')}
+    ${arrow(300,370,70)}
+    ${alabel(335,60,oFwd+'% → agent')}
+    ${node(370,12,150,'👤 Live agent','if transferred')}
+    ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
+    ${arrow(520,550,70)}
+    ${fnode(550,12,150,'AI Assistant','answers · topic','assistant')}
+    ${node(550,74,150,'Agent KB chat','3rd-party opt.','o_assist')}
+    ${arrow(700,730,70)}
+    ${fnode(730,43,150,'AI QM','quality mgmt','qm')}
+  </svg>`;
+  // Chat
+  document.getElementById('diagram-chat').innerHTML =
+  `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
+    ${node(0,43,120,'💬 Customer','web/app/WA/RCS')}
+    ${arrow(120,150,70)}
+    ${node(150,12,150,'Scripted chatbot','Webex · Units','c_scripted')}
+    ${node(150,74,150,'Autonomous chatbot','Webex/3rd · Units','c_autonomous')}
+    ${exitDown(225,128,(100-cFwd)+'% self-served')}
+    ${arrow(300,370,70)}
+    ${alabel(335,60,cFwd+'% → agent')}
+    ${node(370,12,150,'👤 Live agent','human handling')}
+    ${fnode(370,74,150,'AI Assistant','answers · topic','assistant')}
+    ${arrow(520,550,70)}
+    ${node(550,12,150,'Agent KB chat','3rd-party opt.','c_assist')}
+    ${fnode(550,74,150,'AI QM','quality mgmt','qm')}
+  </svg>`;
+  // Email
+  document.getElementById('diagram-email').innerHTML =
+  `<svg viewBox="0 0 1180 200" width="1180" class="max-w-none">${DEFS}
+    ${node(0,63,110,'✉️ Email','inbound')}
+    ${arrow(110,140,90)}
+    ${node(140,63,140,'Classification','intent / routing','e_classify')}
+    ${arrow(280,310,90)}
+    ${node(310,34,140,'Attachment AI','vision / OCR','e_attach')}
+    ${node(310,92,140,'Auto-handle + reply','fully automated','e_autoresp')}
+    ${exitDown(380,146,eAuto+'% auto-resolved')}
+    ${arrow(450,540,90)}
+    ${alabel(495,80,eFwd+'% → agent')}
+    ${node(540,63,150,'↳ Forward to agent','to a human agent')}
+    ${arrow(690,720,90)}
+    ${node(720,6,150,'Email summary','before delivery','e_summary')}
+    ${node(720,64,150,'Suggested reply · KB','distinct AI','e_suggest')}
+    ${node(720,122,150,'Response optimise','on desktop','e_optimize')}
+    ${arrow(870,900,90)}
+    ${node(900,63,150,'📤 Reply sent','to customer')}
+  </svg>`;
+}
+
+/* ============================ MODAL ============================ */
+let modalTp=null;
+function openModal(id){
+  const t=TP.find(x=>x.id===id); if(!t) return; modalTp=id;
+  const p=state.prov[id];
+  document.getElementById('mTitle').textContent=t.label;
+  document.getElementById('mCaps').innerHTML=capBadges(p);
+  document.getElementById('mDesc').innerHTML='Selected provider: <b>'+PROVIDERS[p].name+'</b>';
+  document.getElementById('mBilling').innerHTML=t.billing;
+  document.getElementById('mToggle').checked=state.on[id];
+  const m=document.getElementById('modal'); m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeModal(){ const m=document.getElementById('modal'); m.classList.add('hidden'); m.classList.remove('flex'); modalTp=null; }
+document.getElementById('modal').addEventListener('click',e=>{ if(e.target.id==='modal') closeModal(); });
+document.getElementById('mToggle').addEventListener('change',e=>{ if(modalTp){ state.on[modalTp]=e.target.checked; syncToggles(); update(); }});
+
+/* ============================ UPDATE ============================ */
+let chart;
+function update(){
+  const {rows,byCh,total,unitTotals,c}=calc();
+  // per-touchpoint costs / units
+  TP.forEach(t=>{
+    const el=document.querySelector(`[data-cost="${t.id}"]`);
+    if(!el) return;
+    if(!state.on[t.id]){ el.textContent='off'; el.className='ml-auto text-sm text-slate-400'; return; }
+    const p=state.prov[t.id]; const res=t.compute(c,state.rates[p],p)||{};
+    const cost=res.cost||0;
+    el.innerHTML = res.units!==undefined
+      ? `<span class="text-[color:var(--wx-d)]">${res.units} Unit${res.units===1?'':'s'}</span> · ${fmt(cost)}/mo`
+      : fmt(cost)+'/mo';
+    el.className='ml-auto text-sm font-semibold';
+  });
+  // subtotals
+  CHANNELS.forEach(ch=>{
+    document.querySelector(`[data-subtotal="${ch}"]`).textContent=fmt(byCh[ch])+' / mo';
+  });
+  // unit headline totals
+  document.getElementById('uAgent').textContent=unitTotals.agent;
+  document.getElementById('uAgentAi').textContent=unitTotals.agentAi;
+  const aiMode=state.prov['s_agentai'];
+  document.getElementById('uAgentAiLabel').textContent =
+    aiMode==='webexAssistant' ? 'AI Assistant Units' : aiMode==='webexQM' ? 'AI QM Units' : 'AI Assistant + QM Units';
+  // commit / overage toggle styling
+  const cm=state.commitMode;
+  const bc=document.getElementById('btnCommit'), bo=document.getElementById('btnOverage');
+  if(bc&&bo){ bc.style.background=cm==='commit'?'var(--wx)':'#fff'; bc.style.color=cm==='commit'?'#fff':'#334155';
+    bo.style.background=cm==='overage'?'var(--wx)':'#fff'; bo.style.color=cm==='overage'?'#fff':'#334155'; }
+  // totals
+  document.getElementById('totalMonthly').textContent=fmt(total);
+  document.getElementById('totalAnnual').textContent=fmt(total*12);
+  // result rows
+  document.getElementById('resultRows').innerHTML=Object.keys(byCh).map(ch=>
+    `<div class="flex justify-between"><span class="flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${CH_COLORS[ch]}"></span>${CH_NAMES[ch]}</span><b>${fmt(byCh[ch])}</b></div>`
+  ).join('');
+  // per interaction
+  const totalInt=c.voiceCalls+c.obCalls+c.chatVolume+c.emailVolume;
+  document.getElementById('perInteraction').innerHTML=
+    `Blended cost ≈ <b>${fmt(total/Math.max(totalInt,1))}</b> / interaction · `+
+    `Inbound ${fmt(byCh.voice/Math.max(c.voiceCalls,1))} · Outbound ${fmt(byCh.outbound/Math.max(c.obCalls,1))} · Chat ${fmt(byCh.chat/Math.max(c.chatVolume,1))} · Email ${fmt(byCh.email/Math.max(c.emailVolume,1))}`;
+  // chart
+  const data=Object.keys(byCh).map(ch=>byCh[ch]);
+  if(chart){ chart.data.datasets[0].data=data; chart.update(); }
+  else {
+    chart=new Chart(document.getElementById('chart'),{
+      type:'doughnut',
+      data:{ labels:Object.keys(byCh).map(ch=>CH_NAMES[ch]), datasets:[{ data, backgroundColor:Object.keys(byCh).map(ch=>CH_COLORS[ch]), borderWidth:0 }] },
+      options:{ plugins:{ legend:{ display:false } }, cutout:'62%' }
+    });
+  }
+  // diagram opacity reflect toggles
+  renderDiagrams();
+  // live Webex Unit formulas
+  renderFormulas(c);
+}
+
+function syncToggles(){
+  TP.forEach(t=>{ const cb=document.querySelector(`[data-on="${t.id}"]`); if(cb) cb.checked=state.on[t.id]; });
+}
+
+/* ============================ FIELD STATE / GUESSTIMATE / SAVE-LOAD ============================ */
+function refreshField(key){
+  const wrap=document.querySelector(`[data-field="${key}"]`); if(!wrap) return;
+  const changed = state.inp[key] !== INPUTS[key].v;
+  wrap.querySelector('input').classList.toggle('changed', changed);
+  wrap.querySelector('.revert-btn').classList.toggle('hidden', !changed);
+}
+
+// Estimate LLM tokens + TTS characters from an autonomous voicebot talk duration.
+// Heuristic: ~150 wpm ≈ 12.5 chars/sec; ~50% customer / 50% bot talk time.
+// Input tokens approximate cumulative context (history re-sent each turn) + system/KB overhead.
+function guessTokens(sec, charsPerToken){
+  const cps=12.5, cpt=charsPerToken||4;
+  const custSec=sec*0.5, botSec=sec*0.5;
+  const custTok=custSec*cps/cpt, botTok=botSec*cps/cpt;
+  return {
+    inTok: Math.round(custTok*3 + 800),   // conversation history + system prompt + KB grounding
+    outTok: Math.round(botTok),
+    ttsChars: Math.round(botSec*cps)
+  };
+}
+function applyGuess(group){
+  const cpt=state.inp.charsPerToken||4;
+  if(group==='voice'){
+    const g=guessTokens(state.inp.avgAutonomousSec,cpt);
+    state.inp.voiceBotInTok=g.inTok; state.inp.voiceBotOutTok=g.outTok; state.inp.voiceBotTtsChars=g.ttsChars;
+  } else {
+    const g=guessTokens(state.inp.obAutonomousSec,cpt);
+    state.inp.obBotInTok=g.inTok; state.inp.obBotOutTok=g.outTok; state.inp.obBotTtsChars=g.ttsChars;
+  }
+  renderInputs(); update();
+}
+
+function saveData(){
+  const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='webex-ai-calculator-'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function loadData(file){
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const d=JSON.parse(reader.result);
+      const provided = d.inputs||{};
+      if(d.inputs) Object.keys(state.inp).forEach(k=>{ if(d.inputs[k]!==undefined) state.inp[k]=d.inputs[k]; });
+      if(d.rates) Object.keys(state.rates).forEach(p=>{ if(d.rates[p]) Object.assign(state.rates[p], d.rates[p]); });
+      if(d.providers) Object.keys(state.prov).forEach(id=>{ if(d.providers[id]!==undefined) state.prov[id]=d.providers[id]; });
+      if(d.enabled) Object.keys(state.on).forEach(id=>{ if(d.enabled[id]!==undefined) state.on[id]=d.enabled[id]; });
+      if(Array.isArray(d.allowedProviders)) state.allowedProviders=d.allowedProviders.slice();
+      if(d.commitMode==='commit'||d.commitMode==='overage') state.commitMode=d.commitMode;
+      if(typeof d.needAssistant==='boolean') state.needAssistant=d.needAssistant;
+      if(typeof d.needQm==='boolean') state.needQm=d.needQm;
+      applyAgentAi();
+      renderInputs(); renderTouchpoints(); renderRates(); update();
+      // Schema migration: inputs the current version expects but the file did not include.
+      const fileVer = d.schema || d.version || 1;
+      const missing = Object.keys(INPUTS).filter(k=>!INPUTS[k].hidden && provided[k]===undefined);
+      if(fileVer!==SCHEMA_VERSION && missing.length){ openMigrate(missing, fileVer); }
+    }catch(err){ alert('Could not read file: '+err.message); }
+  };
+  reader.readAsText(file);
+}
+function openMigrate(keys, fileVer){
+  document.getElementById('migrateBody').innerHTML =
+    `<p class="text-sm text-slate-600 mb-3">This file was saved with schema <b>v${fileVer}</b>. The current version is <b>v${SCHEMA_VERSION}</b> and adds the ${keys.length} field(s) below, which were not in the file. Review or adjust the values (pre-filled with defaults), then Apply.</p>
+     <div class="grid grid-cols-2 gap-3">${keys.map(wizField).join('')}</div>`;
+  const m=document.getElementById('migrateModal'); m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeMigrate(){ const m=document.getElementById('migrateModal'); m.classList.add('hidden'); m.classList.remove('flex'); renderInputs(); update(); }
+function resetAll(){
+  Object.keys(INPUTS).forEach(k=> state.inp[k]=INPUTS[k].v);
+  renderInputs(); update();
+}
+
+/* ============================ WIZARD ============================ */
+const wiz = { step:0, channels:{voice:true,outbound:true,chat:true,email:true},
+  providers:Object.fromEntries(SELECTABLE_PROVIDERS.map(id=>[id,true])), preferred:'webexAgent' };
+const WIZ_CH_TP = {
+  voice:['v_scripted','v_autonomous','v_assist'],
+  outbound:['o_autonomous','o_assist'],
+  chat:['c_scripted','c_autonomous','c_assist'],
+  email:['e_classify','e_attach','e_autoresp','e_summary','e_suggest','e_optimize']
+};
+const AUTO_BOT_TP = ['v_autonomous','o_autonomous','c_autonomous'];
+const CH_LABEL = { voice:'Inbound voice', outbound:'Outbound campaign', chat:'Digital / chat', email:'Email' };
+
+function wizField(key){
+  const d=INPUTS[key];
+  return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
+    <span class="flex items-center gap-1">${d.label} ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}</span>
+    <input type="number" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
+  </label>`;
+}
+function wizRate(prov,key){
+  return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
+    <span>${PROVIDERS[prov].name} — ${RATE_LABELS[key]||key}</span>
+    <input type="number" data-rate="${prov}" data-key="${key}" value="${state.rates[prov][key]}" step="any" min="0">
+  </label>`;
+}
+const WIZ_STEPS = [
+ { title:'Welcome — channels in scope', render:()=>`
+   <p class="text-sm text-slate-600 mb-4">This quick setup captures the essentials: channels, automation AI, volumes, the automation/agent split, and Webex Unit pricing. Rerun it anytime with <b>⚙ Setup wizard</b>, or edit any field directly afterwards.</p>
+   <p class="text-sm font-semibold mb-2">Which channels do you want to include?</p>
+   <div class="grid grid-cols-2 gap-2">
+     ${['voice','outbound','chat','email'].map(ch=>`<label class="flex items-center gap-2 p-2 rounded-lg border border-slate-200 text-sm"><input type="checkbox" data-wiz-ch="${ch}" ${wiz.channels[ch]?'checked':''}> ${CH_LABEL[ch]}</label>`).join('')}
+   </div>` },
+ { title:'AI provider selection', render:()=>{
+     const allSel = SELECTABLE_PROVIDERS.every(id=>wiz.providers[id]);
+     const sel = SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]);
+     return `
+     <p class="text-sm text-slate-600 mb-3">Select which AI providers are available to your contact center, then pick a <b>preferred provider</b>. The preferred provider is used wherever it's supported; every touchpoint's dropdown is limited to your selected providers.</p>
+     <label class="flex items-center gap-2 p-2 mb-1 text-sm font-semibold"><input type="checkbox" data-wiz-all ${allSel?'checked':''}> Select all</label>
+     <div class="grid grid-cols-2 gap-2">
+       ${SELECTABLE_PROVIDERS.map(id=>`<label class="flex items-center gap-2 p-2 rounded-lg border ${wiz.providers[id]?'border-[color:var(--wx)] bg-[#eef7f0]':'border-slate-200'} text-sm"><input type="checkbox" data-wiz-prov="${id}" ${wiz.providers[id]?'checked':''}> ${PROVIDERS[id].name}</label>`).join('')}
+     </div>
+     <div class="mt-4">
+       <label class="text-sm font-semibold">Preferred provider</label>
+       <select data-wiz-preferred class="block mt-1 text-sm">${sel.length?sel.map(id=>`<option value="${id}" ${wiz.preferred===id?'selected':''}>${PROVIDERS[id].name}</option>`).join(''):'<option value="">— select a provider above —</option>'}</select>
+       <p class="text-xs text-slate-500 mt-1">Scripted IVR/flows and AI Assistant / AI QM always use their native Webex product regardless of this choice.</p>
+     </div>`; } },
+ { title:'Monthly volumes', render:()=>{ const f=[];
+     if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceCalls','avgScriptedSec','avgAutonomousSec'].map(wizField).join('')+'</div>');
+     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obCalls','obAutonomousSec','obTransferPct'].map(wizField).join('')+'</div>');
+     if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
+     if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
+       +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
+     return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
+ { title:'Automation vs. agent split', render:()=>{ const f=[];
+     if(wiz.channels.voice) f.push(wizField('voiceFwd'));
+     if(wiz.channels.outbound) f.push(wizField('obTransferPct'));
+     if(wiz.channels.chat) f.push(wizField('chatFwd'));
+     if(wiz.channels.email){ f.push(wizField('pctAutoHandled')); f.push(wizField('pctEscalated')); }
+     return `<p class="text-sm text-slate-600 mb-3">How much is handled automatically vs forwarded to a human agent. Agent-side AI cost applies only to the forwarded share.</p>
+       <div class="grid grid-cols-2 gap-3">${f.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}</div>
+       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Human-agent coverage (AI Assistant / QM Units)</div>
+       <div class="grid grid-cols-2 gap-3">${wizField('voiceHumanAht')}${wizField('avgAgentMsgs')}${wizField('assistCoverage')}</div>`; } },
+ { title:'Webex & Cisco-billed pricing', render:()=>{
+     const ccai = wiz.providers.googleCcai ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Google CCAI — Dialogflow CX (via Cisco): Flows = scripted, Playbooks = LLM</div><div class="grid grid-cols-2 gap-3">${wizRate('googleCcai','vaFlowsVoicePerSec')}${wizRate('googleCcai','vaFlowsRequest')}${wizRate('googleCcai','vaVoicePerSec')}${wizRate('googleCcai','vaRequest')}</div>` : '';
+     const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Bring Your Own Virtual Agent (Universal Harness)</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','connectorPerMin')}${wizRate('byova','byoPerMin')}</div>` : '';
+     return `
+     <p class="text-sm text-slate-600 mb-3">Enter your <b>Webex GPL Unit prices</b> (Committed &amp; Overage) and any Cisco-billed rates. Choose Committed or Overage in the Results panel. Third-party token rates can be tuned later in the Pricing panel.</p>
+     <div class="text-xs font-semibold text-slate-700 mb-1">Webex — price per Unit (Committed / Overage)</div>
+     <div class="grid grid-cols-2 gap-3">
+       ${wizRate('webexAgent','commit')}${wizRate('webexAgent','overage')}
+       ${wizRate('webexBundle','commit')}${wizRate('webexBundle','overage')}
+       ${wizRate('webexAssistant','commit')}${wizRate('webexAssistant','overage')}
+       ${wizRate('webexQM','commit')}${wizRate('webexQM','overage')}
+     </div>${ccai}${byo}`; } },
+ { title:'All set', render:()=>`
+   <p class="text-sm text-slate-600">You're ready. Your selections have been applied to the flows and results. Tweak any field directly (changed fields are highlighted), and use <b>↓ Save</b> to keep your scenario as a file. Reopen this wizard anytime from <b>⚙ Setup wizard</b>.</p>` }
+];
+function wizRender(){
+  const s=WIZ_STEPS[wiz.step];
+  document.getElementById('wizTitle').textContent=s.title;
+  document.getElementById('wizStepInfo').textContent=`Step ${wiz.step+1} of ${WIZ_STEPS.length}`;
+  document.getElementById('wizBar').style.width=((wiz.step+1)/WIZ_STEPS.length*100)+'%';
+  document.getElementById('wizBody').innerHTML=s.render();
+  document.getElementById('wizBack').style.visibility = wiz.step===0?'hidden':'visible';
+  document.getElementById('wizNext').textContent = wiz.step===WIZ_STEPS.length-1?'Finish ✓':'Next →';
+}
+function openWizard(){ wiz.step=0; const w=document.getElementById('wizard'); w.classList.remove('hidden'); w.classList.add('flex'); wizRender(); }
+function closeWizard(){ const w=document.getElementById('wizard'); w.classList.add('hidden'); w.classList.remove('flex'); localStorage.setItem('wxCalcWizardSeen','1'); }
+function wizApply(){
+  Object.keys(WIZ_CH_TP).forEach(ch=>{ WIZ_CH_TP[ch].forEach(id=>{ const def=TP.find(t=>t.id===id); state.on[id]= wiz.channels[ch] ? def.on : false; }); });
+  const selected = SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]);
+  state.allowedProviders = selected.length ? selected : [...SELECTABLE_PROVIDERS];
+  const pref = state.allowedProviders.includes(wiz.preferred) ? wiz.preferred : state.allowedProviders[0];
+  TP.forEach(t=>{
+    const allowed = t.providers.filter(p=> state.allowedProviders.includes(p));
+    if(!allowed.length) return;               // single-option native touchpoints (AI Assistant/QM) untouched
+    if(t.providers.includes(pref)) state.prov[t.id]=pref;      // use preferred wherever supported
+    else if(!allowed.includes(state.prov[t.id])) state.prov[t.id]=allowed[0];
+  });
+  renderInputs(); renderTouchpoints(); renderRates(); update();
+}
+function wizNext(){ if(wiz.step<WIZ_STEPS.length-1){ wiz.step++; wizRender(); } else { wizApply(); closeWizard(); } }
+function wizBack(){ if(wiz.step>0){ wiz.step--; wizRender(); } }
+document.getElementById('wizard').addEventListener('click',e=>{ if(e.target.id==='wizard') closeWizard(); });
+
+/* ============================ EVENTS ============================ */
+document.addEventListener('input',e=>{
+  const el=e.target;
+  if(el.dataset.inp!==undefined){ state.inp[el.dataset.inp]=parseFloat(el.value)||0; refreshField(el.dataset.inp); update(); }
+  else if(el.dataset.rate!==undefined){ state.rates[el.dataset.rate][el.dataset.key]=parseFloat(el.value)||0; update(); }
+});
+document.addEventListener('change',e=>{
+  const el=e.target;
+  if(el.dataset.prov!==undefined){ state.prov[el.dataset.prov]=el.value; update(); }
+  else if(el.dataset.on!==undefined){ state.on[el.dataset.on]=el.checked; update(); }
+  else if(el.dataset.wizCh!==undefined){ wiz.channels[el.dataset.wizCh]=el.checked; }
+  else if(el.dataset.wizProv!==undefined){ wiz.providers[el.dataset.wizProv]=el.checked; if(!wiz.providers[wiz.preferred]){ const s=SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]); wiz.preferred=s[0]||''; } wizRender(); }
+  else if(el.hasAttribute && el.hasAttribute('data-wiz-all')){ SELECTABLE_PROVIDERS.forEach(id=> wiz.providers[id]=el.checked); if(!wiz.providers[wiz.preferred]){ const s=SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]); wiz.preferred=s[0]||''; } wizRender(); }
+  else if(el.hasAttribute && el.hasAttribute('data-wiz-preferred')){ wiz.preferred=el.value; }
+  else if(el.id==='fileLoad' && el.files[0]){ loadData(el.files[0]); el.value=''; }
+});
+document.addEventListener('click',e=>{
+  const feat=e.target.closest('[data-feat]');
+  if(feat){ if(feat.dataset.feat==='assistant') state.needAssistant=!state.needAssistant; else state.needQm=!state.needQm; applyAgentAi(); renderTouchpoints(); update(); return; }
+  if(e.target.id==='btnWizard'){ openWizard(); return; }
+  if(e.target.id==='wizNext'){ wizNext(); return; }
+  if(e.target.id==='wizBack'){ wizBack(); return; }
+  if(e.target.id==='wizSkip'){ closeWizard(); return; }
+  if(e.target.id==='migrateApply'){ closeMigrate(); return; }
+  const o=e.target.closest('[data-open]');
+  if(o){ openModal(o.dataset.open); return; }
+  const rev=e.target.closest('[data-revert]');
+  if(rev){ const k=rev.dataset.revert; state.inp[k]=INPUTS[k].v; const inp=document.querySelector(`[data-field="${k}"] input`); if(inp) inp.value=state.inp[k]; refreshField(k); update(); return; }
+  const g=e.target.closest('[data-guess]');
+  if(g){ applyGuess(g.dataset.guess); return; }
+  if(e.target.id==='btnSave'){ saveData(); return; }
+  if(e.target.id==='btnLoad'){ document.getElementById('fileLoad').click(); return; }
+  if(e.target.id==='btnResetAll'){ resetAll(); return; }
+  const cmBtn=e.target.closest('[data-commit]');
+  if(cmBtn){ state.commitMode=cmBtn.dataset.commit; update(); return; }
+});
+
+/* ============================ INIT ============================ */
+renderInputs();
+applyAgentAi();
+renderTouchpoints();
+renderRates();
+renderMatrix();
+renderDiagrams();
+update();
+if(!localStorage.getItem('wxCalcWizardSeen')) openWizard();
+</script>
+</body>
+</html>
