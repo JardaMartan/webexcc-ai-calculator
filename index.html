@@ -102,7 +102,7 @@
     <!-- Outbound -->
     <section class="card p-5" data-channel="outbound">
       <div class="flex items-center justify-between mb-3">
-        <h2 class="font-bold text-base">📢 Outbound voice campaign <span class="text-xs font-normal text-slate-500">(progressive dialer · IVR · voicebot)</span></h2>
+        <h2 class="font-bold text-base">📢 Outbound voice campaign <span class="text-xs font-normal text-slate-500">(mostly direct-to-agent · optional voicebot)</span></h2>
         <span class="text-sm font-semibold" data-subtotal="outbound">—</span>
       </div>
       <div id="diagram-outbound" class="overflow-x-auto pb-2"></div>
@@ -191,9 +191,10 @@
             <button type="button" data-commit="overage" class="px-3 py-1 font-semibold border-l border-slate-200" id="btnOverage">Overage</button>
           </div>
         </div>
-        <div class="grid grid-cols-2 gap-2 mt-2 text-center">
+        <div class="grid grid-cols-3 gap-2 mt-2 text-center">
           <div class="rounded-lg border border-slate-200 p-2"><div class="text-[10px] leading-tight text-slate-500">AI Agent Units</div><div class="font-bold text-lg" id="uAgent">0</div></div>
           <div class="rounded-lg border border-slate-200 p-2"><div class="text-[10px] leading-tight text-slate-500" id="uAgentAiLabel">AI Assistant + QM Units</div><div class="font-bold text-lg" id="uAgentAi">0</div></div>
+          <div class="rounded-lg border border-slate-200 p-2"><div class="text-[10px] leading-tight text-slate-500">Voice AI Units <span class="text-slate-400">(BYOVA / 3rd-party)</span></div><div class="font-bold text-lg" id="uVoiceAi">0</div></div>
         </div>
         <p class="text-[11px] text-slate-400 mt-1">Units = the quantity Cisco bills. × your Committed / Overage price per Unit → cost.</p>
         <div class="mt-4"><canvas id="chart" height="180"></canvas></div>
@@ -304,8 +305,10 @@ const PROVIDERS = {
     rates:{ sttPerMin:0.024, ttsPerMchar:16, visionPerImage:0.001 } },
   deepgram:{ name:'Deepgram (STT)', caps:['stt'], rates:{ sttPerMin:0.0043 } },
   elevenlabs:{ name:'ElevenLabs (STT/TTS)', caps:['stt','tts'], rates:{ sttPerMin:0.0067, ttsPerMchar:100 } },
-  byova:{ name:'Bring Your Own Virtual Agent (Universal Harness)', caps:['scripted','autonomous','kb','stt','tts','actions'],
-    rates:{ connectorPerMin:0.02, byoPerMin:0.06 } }
+  byova:{ name:'BYOVA — Bring Your Own Virtual Agent (Universal Harness)', caps:['scripted','autonomous','kb','stt','tts','actions'],
+    rates:{ commit:10, overage:11.5 } },
+  tpaiVoice:{ name:'Third-Party AI Voice (via Webex)', caps:['scripted','autonomous','stt','tts'],
+    rates:{ commit:1.25, overage:1.4375 } }
 };
 
 const RATE_LABELS = {
@@ -332,7 +335,9 @@ const UNIT = {
   scriptedDigitalSess:4800,   // AI Agent: 1 Unit = 4,800 scripted digital sessions
   autonomousDigitalSess:200,  // AI Agent: 1 Unit = 200 autonomous (LLM) digital sessions
   assistVoiceMin:1500,        // AI Assistant/QM: 1 Unit = 1,500 covered agent-voice minutes
-  assistDigitalSess:1000      // AI Assistant/QM: 1 Unit = 1,000 covered digital sessions
+  assistDigitalSess:1000,     // AI Assistant/QM: 1 Unit = 1,000 covered digital sessions
+  tpVoiceMin:250,             // Third-Party AI Voice: 1 Unit = 1,000 x 15-second increments = 250 minutes
+  byovaMin:2000               // BYOVA (A-FLEX-BYO): 1 Unit = 2,000 voice minutes
 };
 
 // Input field definitions
@@ -341,22 +346,25 @@ const INPUTS = {
   // global
   charsPerToken:{ label:'Chars per token', v:4, group:'global', step:0.5, info:'Assumed characters per LLM token (~4). Used by the token guesstimator to convert speech duration into tokens.' },
   // inbound voice
-  voiceCalls:{ label:'Voice calls / month', v:20000, group:'voice', info:'Total inbound voice calls per month that enter the AI voicebot.' },
-  voiceFwd:{ label:'% forwarded to agent', v:65, group:'voice', suffix:'%', info:'Share of calls forwarded to a human agent (the rest are self-served by the bot). Drives AI Assistant / QM usage and matches the flow diagram.' },
-  avgScriptedSec:{ label:'Scripted secs / call', v:40, group:'voice', info:'Average seconds per call spent in the scripted (IVR/flow) bot. Drives scripted-voice Units / CCAI Flows cost.' },
-  avgAutonomousSec:{ label:'Autonomous secs / call', v:60, group:'voice', info:'Average seconds per call spent in the autonomous (LLM) voicebot. Drives autonomous-voice Units / CCAI Playbooks / 3rd-party cost.' },
+  voiceBotCalls:{ label:'Voicebot calls / month', v:20000, group:'voice', info:'Number of inbound calls per month handled by the voicebot.' },
+  voiceBotMin:{ label:'Voicebot minutes / month', v:33000, group:'voice', info:'Total monthly minutes those calls spend with the voicebot. Split below into scripted vs autonomous.' },
+  voiceBotAutoPct:{ label:'Autonomous % of bot minutes', v:60, group:'voice', suffix:'%', info:'Share of the voicebot minutes handled by the autonomous (LLM) bot; the rest is the scripted (IVR/flow) bot. Splits the minutes between the two Unit rates.' },
+  voiceAgentCalls:{ label:'Live-agent calls / month', v:13000, group:'voice', info:'Number of inbound calls per month that reach a live agent.' },
+  voiceAgentMin:{ label:'Live-agent minutes / month', v:91000, group:'voice', info:'Total monthly minutes those calls spend with a live agent. Voicebot time is separate and additive. Drives AI Assistant / QM voice minutes.' },
   voiceBotInTok:{ label:'Bot LLM input tok / call', v:1500, group:'voice', info:'Average LLM input tokens per call for a token-priced 3rd-party voicebot (OpenAI/Gemini/Azure). Ignored for Webex/CCAI/BYOVA. Tip: use ✨ Guesstimate.' },
   voiceBotOutTok:{ label:'Bot LLM output tok / call', v:400, group:'voice', info:'Average LLM output tokens per call for a token-priced 3rd-party voicebot. Ignored for Webex/CCAI/BYOVA.' },
   voiceBotTtsChars:{ label:'Bot TTS chars / call', v:600, group:'voice', info:'Average text-to-speech characters the bot speaks per call, for token/character-priced 3rd-party voicebots.' },
-  voiceAssistTok:{ label:'Agent KB-chat tok / call', v:1200, group:'voice', info:'Tokens per escalated call for the optional 3rd-party agent KB-chat (knowledge-base answers, not conversation-aware).' },
+  voiceAssistTok:{ label:'Agent KB-chat tok / call', v:1200, group:'voice', info:'Tokens per live-agent call for the optional 3rd-party agent KB-chat (knowledge-base answers, not conversation-aware).' },
   // outbound voice campaign
-  obCalls:{ label:'Connected calls / month', v:12000, group:'outbound', info:'Outbound campaign calls per month that connect and reach the voicebot.' },
-  obAutonomousSec:{ label:'Voicebot secs / call', v:45, group:'outbound', info:'Average seconds per connected call spent with the outbound autonomous voicebot.' },
-  obTransferPct:{ label:'% forwarded to agent', v:80, group:'outbound', suffix:'%', info:'Share of connected calls handed to a live agent. Drives AI Assistant / QM usage.' },
+  obBotCalls:{ label:'Voicebot calls / month', v:3000, group:'outbound', info:'Number of outbound calls per month first handled by a voicebot (the rest are dialled straight to a live agent).' },
+  obBotMin:{ label:'Voicebot minutes / month', v:3250, group:'outbound', info:'Total monthly minutes those calls spend with the voicebot. Split below into scripted vs autonomous.' },
+  obBotAutoPct:{ label:'Autonomous % of bot minutes', v:70, group:'outbound', suffix:'%', info:'Share of the voicebot minutes handled by the autonomous (LLM) bot; the rest is the scripted (flow/IVR) bot.' },
+  obAgentCalls:{ label:'Live-agent calls / month', v:11000, group:'outbound', info:'Number of outbound calls per month that reach a live agent (direct-dial + transferred-from-bot).' },
+  obAgentMin:{ label:'Live-agent minutes / month', v:44000, group:'outbound', info:'Total monthly minutes those calls spend with the agent. Voicebot time is separate and additive. Drives AI Assistant / QM voice minutes.' },
   obBotInTok:{ label:'Bot LLM input tok / call', v:1000, group:'outbound', info:'Average LLM input tokens per call for a token-priced 3rd-party outbound voicebot. Ignored for Webex/CCAI/BYOVA.' },
   obBotOutTok:{ label:'Bot LLM output tok / call', v:300, group:'outbound', info:'Average LLM output tokens per call for a token-priced 3rd-party outbound voicebot.' },
   obBotTtsChars:{ label:'Bot TTS chars / call', v:500, group:'outbound', info:'Average TTS characters spoken per call for a 3rd-party outbound voicebot.' },
-  obAssistTok:{ label:'Agent KB-chat tok / call', v:1000, group:'outbound', info:'Tokens per transferred call for optional 3rd-party agent KB-chat.' },
+  obAssistTok:{ label:'Agent KB-chat tok / call', v:1000, group:'outbound', info:'Tokens per call reaching a live agent (direct-dial + transferred-from-bot) for optional 3rd-party agent KB-chat.' },
   // chat
   chatVolume:{ label:'Chats / month', v:15000, group:'chat', info:'Total digital/chat interactions per month across all channels (web, app, WhatsApp, Apple, RCS, SMS).' },
   chatFwd:{ label:'% forwarded to agent', v:55, group:'chat', suffix:'%', info:'Share of chats forwarded to a human agent (the rest are self-served by the bot). Drives AI Assistant / QM usage and matches the flow diagram.' },
@@ -376,7 +384,6 @@ const INPUTS = {
   pctAutoHandled:{ label:'% handled automatically', v:40, group:'email', suffix:'%', info:'Share of emails fully resolved by AI (auto-response generated, never reaches an agent).' },
   pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. Drives summary + suggested-response + optimisation AI cost.' },
   // human-agent coverage (AI Assistant / AI QM Units)
-  voiceHumanAht:{ label:'Human voice AHT (sec)', v:420, group:'coverage', info:'Average handle time (seconds) of an escalated/transferred call once a human agent takes it. Drives AI Assistant / QM voice minutes.' },
   avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'coverage', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / QM digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
   assistCoverage:{ label:'AI Assistant/QM coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions covered by AI Assistant / QM. Multiplies the covered minutes/sessions before converting to Units.' }
 };
@@ -385,26 +392,30 @@ const INPUTS = {
 const TP = [
   // --- VOICE ---
   { id:'v_scripted', channel:'voice', label:'Scripted voicebot', on:true, prov:'webexAgent',
-    providers:['webexAgent','googleCcai','byova'],
-    billing:'Deterministic IVR/flow agent. <b>Webex AI Agent</b>: Units — 1 Unit = 1,600 scripted voice minutes. <b>Google CCAI — Dialogflow CX Flows</b>: per voice second (~$0.001/s), billed via Cisco. <b>BYOVA (Universal Harness)</b>: Webex connector $/min + your own vendor $/min.',
-    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.voiceCalls*c.avgScriptedSec/60; const units=Math.ceil(min/UNIT.scriptedVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.voiceCalls*c.avgScriptedSec*(r.vaFlowsVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.voiceCalls*(c.avgScriptedSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } return { cost:0 }; } },
+    providers:['webexAgent','googleCcai','byova','tpaiVoice'],
+    billing:'Deterministic IVR/flow agent. <b>Webex AI Agent</b>: Units — 1 Unit = 1,600 scripted voice minutes. <b>Google CCAI — Dialogflow CX Flows</b>: per voice second (~$0.001/s), billed via Cisco. <b>BYOVA</b> (A-FLEX-BYO): Webex Unit = 2,000 voice minutes. <b>Third-Party AI Voice</b>: Webex Unit = 250 minutes (1,000 × 15-second increments).',
+    compute:(c,r,p)=>{ const min=c.voiceScriptedMin; if(p==='webexAgent'){ const units=Math.ceil(min/UNIT.scriptedVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:min*60*(r.vaFlowsVoicePerSec||0) }; } if(p==='byova'||p==='tpaiVoice'){ const units=Math.ceil(min/(p==='byova'?UNIT.byovaMin:UNIT.tpVoiceMin)); return { units, product:'voiceai', cost:units*wxUnit(r) }; } return { cost:0 }; } },
   { id:'v_autonomous', channel:'voice', label:'Autonomous voicebot', on:true, prov:'webexAgent',
-    providers:['webexAgent','googleCcai','byova','openai','google','azure'],
-    billing:'LLM-based bot (prompt + actions), combinable with scripted in one call. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI — Dialogflow CX Playbooks</b> (generative): per voice second (~$0.002/s), billed via Cisco. <b>BYOVA (Universal Harness)</b>: Webex connector $/min + your own vendor $/min. Other 3rd-party: STT/min + LLM tokens + TTS chars.',
-    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.voiceCalls*c.avgAutonomousSec/60; const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.voiceCalls*c.avgAutonomousSec*(r.vaVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.voiceCalls*(c.avgAutonomousSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } const cost=c.voiceCalls*((c.avgAutonomousSec/60)*(r.sttPerMin||0)+tok(c.voiceBotInTok,c.voiceBotOutTok,r)+(c.voiceBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
+    providers:['webexAgent','googleCcai','byova','tpaiVoice','openai','google','azure'],
+    billing:'LLM-based bot (prompt + actions), combinable with scripted in one call. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI — Dialogflow CX Playbooks</b>: per voice second (~$0.002/s), via Cisco. <b>BYOVA</b> (A-FLEX-BYO): Webex Unit = <b>2,000 voice minutes</b> ($10/$11.50). <b>Third-Party AI Voice</b>: Webex Unit = <b>250 minutes</b> (1,000 × 15-second increments, $1.25). The external AI vendor is billed separately. Token 3rd-party: STT/min + LLM tokens + TTS chars.',
+    compute:(c,r,p)=>{ const min=c.voiceAutoMin; if(p==='webexAgent'){ const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:min*60*(r.vaVoicePerSec||0) }; } if(p==='byova'||p==='tpaiVoice'){ const units=Math.ceil(min/(p==='byova'?UNIT.byovaMin:UNIT.tpVoiceMin)); return { units, product:'voiceai', cost:units*wxUnit(r) }; } const cost=min*(r.sttPerMin||0)+c.voiceBotCalls*(tok(c.voiceBotInTok,c.voiceBotOutTok,r)+(c.voiceBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
   { id:'v_assist', channel:'voice', label:'Agent KB chat (3rd-party)', on:false, prov:'openai',
     providers:['openai','google','anthropic','azure'],
     billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> — <i>not</i> aware of the live customer conversation. Native conversation-aware <b>Agent Assistant is Webex AI Assistant only</b>. Cost = escalated calls × KB-chat tokens.',
     compute:(c,r,p)=>({ cost:c.voiceEscalated * tok(c.voiceAssistTok, c.voiceAssistTok*0.4, r) }) },
 
   // --- OUTBOUND ---
+  { id:'o_scripted', channel:'outbound', label:'Scripted voicebot', on:true, prov:'webexAgent',
+    providers:['webexAgent','googleCcai','byova','tpaiVoice'],
+    billing:'Deterministic IVR/flow for the bot-handled calls (identify, consent, routing). <b>Webex AI Agent</b>: Units — 1 Unit = 1,600 scripted voice minutes. <b>Google CCAI — Dialogflow CX Flows</b>: per voice second (~$0.001/s), via Cisco. <b>BYOVA</b> (A-FLEX-BYO): Webex Unit = 2,000 voice minutes. <b>Third-Party AI Voice</b>: Webex Unit = 250 minutes. Applies only to the calls that start with a voicebot.',
+    compute:(c,r,p)=>{ const min=c.obScriptedMin; if(p==='webexAgent'){ const units=Math.ceil(min/UNIT.scriptedVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:min*60*(r.vaFlowsVoicePerSec||0) }; } if(p==='byova'||p==='tpaiVoice'){ const units=Math.ceil(min/(p==='byova'?UNIT.byovaMin:UNIT.tpVoiceMin)); return { units, product:'voiceai', cost:units*wxUnit(r) }; } return { cost:0 }; } },
   { id:'o_autonomous', channel:'outbound', label:'Autonomous voicebot', on:true, prov:'webexAgent',
-    providers:['webexAgent','googleCcai','byova','openai','google','azure'],
-    billing:'LLM voicebot for surveys / reminders / collections. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI (via Cisco)</b>: per voice second (~$0.002/s), billed through Cisco. <b>Bring Your Own Virtual Agent (Universal Harness)</b>: Webex connector $/min (via Cisco) + your own vendor $/min. Other 3rd-party: STT/min + LLM tokens + TTS chars.',
-    compute:(c,r,p)=>{ if(p==='webexAgent'){ const min=c.obCalls*c.obAutonomousSec/60; const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:c.obCalls*c.obAutonomousSec*(r.vaVoicePerSec||0) }; } if(p==='byova'){ return { cost:c.obCalls*(c.obAutonomousSec/60)*((r.connectorPerMin||0)+(r.byoPerMin||0)) }; } const cost=c.obCalls*((c.obAutonomousSec/60)*(r.sttPerMin||0)+tok(c.obBotInTok,c.obBotOutTok,r)+(c.obBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
+    providers:['webexAgent','googleCcai','byova','tpaiVoice','openai','google','azure'],
+    billing:'LLM voicebot for surveys / reminders / collections. <b>Webex AI Agent: 1 Unit = 250 autonomous voice minutes.</b> <b>Google CCAI</b>: per voice second (~$0.002/s), via Cisco. <b>BYOVA</b> (A-FLEX-BYO): Webex Unit = <b>2,000 voice minutes</b> ($10/$11.50). <b>Third-Party AI Voice</b>: Webex Unit = <b>250 minutes</b> (1,000 × 15-second increments, $1.25). Token 3rd-party: STT/min + LLM tokens + TTS chars.',
+    compute:(c,r,p)=>{ const min=c.obAutoMin; if(p==='webexAgent'){ const units=Math.ceil(min/UNIT.autonomousVoiceMin); return { units, product:'agent', cost:units*wxUnit(r) }; } if(p==='googleCcai'){ return { cost:min*60*(r.vaVoicePerSec||0) }; } if(p==='byova'||p==='tpaiVoice'){ const units=Math.ceil(min/(p==='byova'?UNIT.byovaMin:UNIT.tpVoiceMin)); return { units, product:'voiceai', cost:units*wxUnit(r) }; } const cost=min*(r.sttPerMin||0)+c.obBotCalls*(tok(c.obBotInTok,c.obBotOutTok,r)+(c.obBotTtsChars/1e6)*(r.ttsPerMchar||0)); return { cost }; } },
   { id:'o_assist', channel:'outbound', label:'Agent KB chat (3rd-party)', on:false, prov:'openai',
     providers:['openai','google','anthropic','azure'],
-    billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> for transferred calls — <i>not</i> aware of the live conversation. Conversation-aware Agent Assistant is Webex AI Assistant only. Cost = transferred calls × KB-chat tokens.',
+    billing:'A 3rd-party LLM answering agent questions <b>from the knowledge base</b> for calls reaching a live agent (direct-dial + transferred-from-bot) — <i>not</i> aware of the live conversation. Conversation-aware Agent Assistant is Webex AI Assistant only. Cost = calls reaching a live agent × KB-chat tokens.',
     compute:(c,r,p)=>({ cost:c.obTransferred * tok(c.obAssistTok, c.obAssistTok*0.4, r) }) },
 
   // --- CHAT ---
@@ -457,8 +468,8 @@ const TP = [
 /* ============================ STATE ============================ */
 // Providers the user can choose between across touchpoints (excludes the single-option
 // Webex AI Assistant / AI QM which are the only provider for their touchpoints).
-const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','openai','google','anthropic','azure','aws'];
-const SCHEMA_VERSION = 5;
+const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
+const SCHEMA_VERSION = 10;
 const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
@@ -473,11 +484,37 @@ const CH_NAMES = { voice:'Inbound voice', outbound:'Outbound', chat:'Chat', emai
 const CH_COLORS = { voice:'#00cf64', outbound:'#14b8a6', chat:'#2f6fed', email:'#f59e0b', subs:'#8b5cf6' };
 const CHANNELS = ['voice','outbound','chat','email','subs'];
 
+// Shift a hex colour: t>0 lightens toward white, t<0 darkens toward black.
+function shade(hex,t){ const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  if(t>=0){ r=r+(255-r)*t; g=g+(255-g)*t; b=b+(255-b)*t; } else { const f=1+t; r=r*f; g=g*f; b=b*f; }
+  return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`; }
+// Build nested-doughnut data + grouped legend: inner = channel totals, outer = touchpoint split (distinct shades per channel).
+function donutData(rows,byCh){
+  const inner={data:[],colors:[],labels:[]}, outer={data:[],colors:[],labels:[]}, groups=[];
+  CHANNELS.forEach(ch=>{
+    if(byCh[ch]<=0) return;
+    inner.data.push(byCh[ch]); inner.colors.push(CH_COLORS[ch]); inner.labels.push(CH_NAMES[ch]);
+    const parts=rows.filter(r=>r.channel===ch && r.cost>0);
+    const g={ name:CH_NAMES[ch], color:CH_COLORS[ch], cost:byCh[ch], parts:[] };
+    parts.forEach((r,i)=>{ const frac = parts.length>1 ? i/(parts.length-1) : 0.5; const t = -0.35 + 1.05*frac; const col=shade(CH_COLORS[ch],t);
+      outer.data.push(r.cost); outer.colors.push(col); outer.labels.push(CH_NAMES[ch]+' · '+r.label);
+      g.parts.push({ label:r.label, color:col, cost:r.cost }); });
+    groups.push(g);
+  });
+  return { inner, outer, groups };
+}
+
 function ctx(){
   const i = state.inp;
   const c = {...i};
-  c.voiceEscalated = i.voiceCalls*(i.voiceFwd/100);
-  c.obTransferred  = i.obCalls*(i.obTransferPct/100);
+  c.voiceCalls       = Math.max(i.voiceBotCalls, i.voiceAgentCalls);
+  c.obCalls          = Math.max(i.obBotCalls, i.obAgentCalls);
+  c.voiceEscalated   = i.voiceAgentCalls;
+  c.obTransferred    = i.obAgentCalls;
+  c.voiceScriptedMin = i.voiceBotMin*(1-i.voiceBotAutoPct/100);
+  c.voiceAutoMin     = i.voiceBotMin*(i.voiceBotAutoPct/100);
+  c.obScriptedMin    = i.obBotMin*(1-i.obBotAutoPct/100);
+  c.obAutoMin        = i.obBotMin*(i.obBotAutoPct/100);
   c.chatSessions   = i.chatVolume*Math.ceil(i.avgCustomerMsgs/10);
   c.chatEscalated  = i.chatVolume*(i.chatFwd/100);
   c.pctWithAttach  = i.pctWithAttach/100;
@@ -485,7 +522,7 @@ function ctx(){
   c.pctEscalated   = i.pctEscalated/100;
   c.emailEscalated = i.emailVolume*(i.pctEscalated/100);
   // AI Assistant / AI QM consumption units (covered human-handled interactions)
-  c.voiceHumanMin = (c.voiceEscalated + c.obTransferred) * (i.voiceHumanAht/60) * (i.assistCoverage/100);
+  c.voiceHumanMin = (i.voiceAgentMin + i.obAgentMin) * (i.assistCoverage/100);
   c.digitalHumanSessions = c.chatEscalated * Math.ceil(i.avgAgentMsgs/10) * (i.assistCoverage/100);
   c.assistUnits = Math.ceil(c.voiceHumanMin/UNIT.assistVoiceMin) + Math.ceil(c.digitalHumanSessions/UNIT.assistDigitalSess);
   c.qmUnits = c.assistUnits; // bundled: same consumption base
@@ -496,14 +533,14 @@ function ctx(){
 function calc(){
   const c = ctx();
   const rows=[]; const byCh={voice:0,outbound:0,chat:0,email:0,subs:0};
-  const unitTotals={ agent:0, agentAi:0 };
+  const unitTotals={ agent:0, agentAi:0, voiceai:0 };
   TP.forEach(t=>{
     if(!state.on[t.id]) return;
     const p = state.prov[t.id];
     const res = t.compute(c, state.rates[p], p) || {};
     const cost = res.cost || 0;
     byCh[t.channel]+=cost;
-    if(res.units && res.product){ unitTotals[res.product==='agent'?'agent':'agentAi']+=res.units; }
+    if(res.units && res.product){ const b = res.product==='agent'?'agent':(res.product==='voiceai'?'voiceai':'agentAi'); unitTotals[b]+=res.units; }
     rows.push({ id:t.id, label:t.label, channel:t.channel, prov:PROVIDERS[p].name, cost, units:res.units });
   });
   const total = Object.values(byCh).reduce((a,b)=>a+b,0);
@@ -590,8 +627,8 @@ function renderRates(){
   const wrap=document.getElementById('ratesPanel');
   wrap.innerHTML = Object.keys(PROVIDERS).map(p=>{
     const r=PROVIDERS[p].rates;
-    const negotiated = p.startsWith('webex') || p==='googleCcai' || p==='byova';
-    const pill = p==='googleCcai' ? 'via Cisco (negotiated)' : p==='byova' ? 'BYO + Cisco connector' : (p.startsWith('webex') ? 'GPL' : '');
+    const negotiated = p.startsWith('webex') || p==='googleCcai' || p==='byova' || p==='tpaiVoice';
+    const pill = p==='googleCcai' ? 'via Cisco (negotiated)' : p==='byova' ? 'GPL (per 2000-min Unit)' : p==='tpaiVoice' ? 'GPL (per 250-min Unit)' : (p.startsWith('webex') ? 'GPL' : '');
     const fields=Object.keys(r).map(k=>`<label class="text-xs text-slate-600 flex items-center justify-between gap-2">
       <span>${RATE_LABELS[k]||k}</span>
       <input type="number" class="w-28" data-rate="${p}" data-key="${k}" value="${state.rates[p][k]}" step="any" min="0">
@@ -608,9 +645,10 @@ function renderFormulas(c){
   const box=document.getElementById('formulaBox'); if(!box) return;
   const n=x=>Math.round(x).toLocaleString('en-US');
   const ce=Math.ceil;
-  const sVMin=c.voiceCalls*c.avgScriptedSec/60;
-  const aVMin=c.voiceCalls*c.avgAutonomousSec/60;
-  const oVMin=c.obCalls*c.obAutonomousSec/60;
+  const sVMin=c.voiceScriptedMin;
+  const aVMin=c.voiceAutoMin;
+  const oVMin=c.obAutoMin;
+  const oSMin=c.obScriptedMin;
   const sSess=c.chatSessions*(1-c.chatAutoMix/100);
   const aSess=c.chatSessions*(c.chatAutoMix/100);
   const eAuto=c.emailVolume*c.pctAutoHandled;
@@ -619,12 +657,14 @@ function renderFormulas(c){
    <div>
      <div class="font-semibold mb-1">Webex AI Agent — billed in Units (voice in minutes, digital in sessions; 1 session = 10 inbound customer messages)</div>
      <ul class="space-y-1 text-slate-600 list-disc pl-5">
-       <li>Scripted voice — <b>1 Unit = 1,600 min</b>: &lceil; ${n(c.voiceCalls)} calls × ${n(c.avgScriptedSec)}s ÷ 60 ÷ 1,600 &rceil; = <b>${ce(sVMin/1600)} Units</b></li>
+       <li>Scripted voice, inbound — <b>1 Unit = 1,600 min</b>: &lceil; ${n(sVMin)} min ÷ 1,600 &rceil; = <b>${ce(sVMin/1600)} Units</b></li>
+       <li>Scripted voice, outbound — <b>1 Unit = 1,600 min</b>: &lceil; ${n(oSMin)} min ÷ 1,600 &rceil; = <b>${ce(oSMin/1600)} Units</b></li>
        <li>Autonomous voice, inbound — <b>1 Unit = 250 min</b>: &lceil; ${n(aVMin)} min ÷ 250 &rceil; = <b>${ce(aVMin/250)} Units</b></li>
        <li>Autonomous voice, outbound — <b>1 Unit = 250 min</b>: &lceil; ${n(oVMin)} min ÷ 250 &rceil; = <b>${ce(oVMin/250)} Units</b></li>
        <li>Scripted digital — <b>1 Unit = 4,800 sessions</b>: &lceil; ${n(sSess)} ÷ 4,800 &rceil; = <b>${ce(sSess/4800)} Units</b></li>
        <li>Autonomous digital — <b>1 Unit = 200 sessions</b>: &lceil; ${n(aSess)} ÷ 200 &rceil; = <b>${ce(aSess/200)} Units</b></li>
        <li>Email — <b>1 session per email per action</b>, 1 Unit = 200 sessions: classify ${n(c.emailVolume)}, auto-handle ${n(eAuto)}, summary/suggestion ${n(eEsc)} each. A forwarded email = summary + suggestion = 2 sessions. (Desktop optimisation is 3rd-party, not AI Agent.)</li>
+       <li>BYOVA (A-FLEX-BYO) — <b>1 Unit = 2,000 voice minutes</b> ($10/$11.50). Third-Party AI Voice — <b>1 Unit = 250 min</b> (1,000 × 15-second increments, $1.25). Both shown as <b>Voice AI Units</b>.</li>
      </ul>
      <div class="text-xs text-slate-400 mt-1">Applies when the bot is Webex AI Agent. Google CCAI, BYOVA and token providers use their own rates instead.</div>
    </div>
@@ -682,19 +722,22 @@ const DEFS = `<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" re
 
 function renderDiagrams(){
   const i=state.inp;
-  const vFwd=Math.round(i.voiceFwd), cFwd=Math.round(i.chatFwd), oFwd=Math.round(i.obTransferPct);
+  const cFwd=Math.round(i.chatFwd);
   const eAuto=Math.round(i.pctAutoHandled), eFwd=Math.round(i.pctEscalated);
+  const num=x=>Math.round(x||0).toLocaleString('en-US');
+  const vBot=i.voiceBotCalls||0, vAg=i.voiceAgentCalls||0, vSelf=Math.max(vBot-vAg,0);
+  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0;
   // Voice
   document.getElementById('diagram-voice').innerHTML =
   `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
-    ${node(0,43,120,'📞 Caller','inbound call')}
+    ${node(0,43,120,'📞 Caller',num(vBot)+' calls')}
     ${arrow(120,150,70)}
     ${node(150,12,150,'Scripted voicebot','Webex · Units','v_scripted')}
     ${node(150,74,150,'Autonomous voicebot','Webex/3rd · Units','v_autonomous')}
-    ${exitDown(225,128,(100-vFwd)+'% self-served')}
+    ${exitDown(225,128,num(vSelf)+' self-served')}
     ${arrow(300,370,70)}
-    ${alabel(335,60,vFwd+'% → agent')}
-    ${node(370,12,150,'👤 Live agent','human handling')}
+    ${alabel(335,60,num(vAg)+' → agent')}
+    ${node(370,12,150,'👤 Live agent',num(vAg)+' calls')}
     ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
     ${arrow(520,550,70)}
     ${fnode(550,12,150,'AI Assistant','answers · topic','assistant')}
@@ -702,22 +745,26 @@ function renderDiagrams(){
     ${arrow(700,730,70)}
     ${fnode(730,43,150,'AI QM','quality mgmt','qm')}
   </svg>`;
-  // Outbound (mirrors the inbound voice agent + assistant layout)
+  // Outbound: most calls dial straight to a live agent; some pass through a scripted+autonomous voicebot first
   document.getElementById('diagram-outbound').innerHTML =
-  `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
-    ${node(0,43,120,'📢 Campaign','progressive dialer')}
-    ${arrow(120,150,70)}
-    ${node(150,43,150,'Autonomous voicebot','Webex/3rd · Units','o_autonomous')}
-    ${exitDown(225,97,(100-oFwd)+'% self-served')}
-    ${arrow(300,370,70)}
-    ${alabel(335,60,oFwd+'% → agent')}
-    ${node(370,12,150,'👤 Live agent','if transferred')}
-    ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
-    ${arrow(520,550,70)}
-    ${fnode(550,12,150,'AI Assistant','answers · topic','assistant')}
-    ${node(550,74,150,'Agent KB chat','3rd-party opt.','o_assist')}
-    ${arrow(700,730,70)}
-    ${fnode(730,43,150,'AI QM','quality mgmt','qm')}
+  `<svg viewBox="0 0 900 180" width="900" class="max-w-none">${DEFS}
+    ${node(0,57,120,'📢 Campaign','progressive dialer')}
+    <path d="M120,68 C135,68 140,12 175,12 L345,12 C356,12 360,30 360,50" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
+    ${alabel(255,23,'direct-dial')}
+    ${arrow(120,160,84)}
+    ${alabel(140,77,num(oBotN))}
+    ${node(160,28,150,'Scripted voicebot','Webex · Units','o_scripted')}
+    ${node(160,88,150,'Autonomous voicebot','Webex/3rd · Units','o_autonomous')}
+    ${exitDown(235,142,'self-served')}
+    <path d="M310,84 C336,84 345,52 360,52" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
+    ${alabel(336,70,'→ agent')}
+    ${node(360,28,150,'👤 Live agent',num(oAgN)+' calls')}
+    ${fnode(360,88,150,'Real-time transcript','Assistant','assistant')}
+    ${arrow(510,560,55)}
+    ${fnode(560,28,150,'AI Assistant','answers · topic','assistant')}
+    ${node(560,88,150,'Agent KB chat','3rd-party opt.','o_assist')}
+    ${arrow(710,730,85)}
+    ${fnode(730,58,150,'AI QM','quality mgmt','qm')}
   </svg>`;
   // Chat
   document.getElementById('diagram-chat').innerHTML =
@@ -796,6 +843,7 @@ function update(){
   // unit headline totals
   document.getElementById('uAgent').textContent=unitTotals.agent;
   document.getElementById('uAgentAi').textContent=unitTotals.agentAi;
+  document.getElementById('uVoiceAi').textContent=unitTotals.voiceai;
   const aiMode=state.prov['s_agentai'];
   document.getElementById('uAgentAiLabel').textContent =
     aiMode==='webexAssistant' ? 'AI Assistant Units' : aiMode==='webexQM' ? 'AI QM Units' : 'AI Assistant + QM Units';
@@ -808,22 +856,30 @@ function update(){
   document.getElementById('totalMonthly').textContent=fmt(total);
   document.getElementById('totalAnnual').textContent=fmt(total*12);
   // result rows
-  document.getElementById('resultRows').innerHTML=Object.keys(byCh).map(ch=>
-    `<div class="flex justify-between"><span class="flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${CH_COLORS[ch]}"></span>${CH_NAMES[ch]}</span><b>${fmt(byCh[ch])}</b></div>`
-  ).join('');
+  // chart + legend — nested doughnut: inner ring = channel/scenario totals, outer ring = touchpoint split
+  const dd=donutData(rows,byCh);
+  document.getElementById('resultRows').innerHTML=dd.groups.map(g=>
+    `<div class="flex justify-between font-medium"><span class="flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${g.color}"></span>${g.name}</span><b>${fmt(g.cost)}</b></div>`+
+    g.parts.map(p=>`<div class="flex justify-between text-xs text-slate-500 pl-6"><span class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full" style="background:${p.color}"></span>${p.label}</span><span>${fmt(p.cost)}</span></div>`).join('')
+  ).join('') || '<div class="text-sm text-slate-400">No costs yet.</div>';
   // per interaction
   const totalInt=c.voiceCalls+c.obCalls+c.chatVolume+c.emailVolume;
   document.getElementById('perInteraction').innerHTML=
     `Blended cost ≈ <b>${fmt(total/Math.max(totalInt,1))}</b> / interaction · `+
     `Inbound ${fmt(byCh.voice/Math.max(c.voiceCalls,1))} · Outbound ${fmt(byCh.outbound/Math.max(c.obCalls,1))} · Chat ${fmt(byCh.chat/Math.max(c.chatVolume,1))} · Email ${fmt(byCh.email/Math.max(c.emailVolume,1))}`;
-  // chart
-  const data=Object.keys(byCh).map(ch=>byCh[ch]);
-  if(chart){ chart.data.datasets[0].data=data; chart.update(); }
-  else {
+  if(chart){
+    chart.data.datasets[0].data=dd.outer.data; chart.data.datasets[0].backgroundColor=dd.outer.colors; chart.data.datasets[0]._labels=dd.outer.labels;
+    chart.data.datasets[1].data=dd.inner.data; chart.data.datasets[1].backgroundColor=dd.inner.colors; chart.data.datasets[1]._labels=dd.inner.labels;
+    chart.update();
+  } else {
+    const tipLabel=(item)=>{ const ds=item.chart.data.datasets[item.datasetIndex]; const l=(ds._labels&&ds._labels[item.dataIndex])||''; return l+': '+fmt(item.parsed); };
     chart=new Chart(document.getElementById('chart'),{
       type:'doughnut',
-      data:{ labels:Object.keys(byCh).map(ch=>CH_NAMES[ch]), datasets:[{ data, backgroundColor:Object.keys(byCh).map(ch=>CH_COLORS[ch]), borderWidth:0 }] },
-      options:{ plugins:{ legend:{ display:false } }, cutout:'62%' }
+      data:{ datasets:[
+        { data:dd.outer.data, backgroundColor:dd.outer.colors, _labels:dd.outer.labels, borderWidth:1, borderColor:'#fff', weight:1.1 },
+        { data:dd.inner.data, backgroundColor:dd.inner.colors, _labels:dd.inner.labels, borderWidth:1, borderColor:'#fff', weight:0.9 }
+      ]},
+      options:{ cutout:'38%', plugins:{ legend:{ display:false }, tooltip:{ callbacks:{ label:tipLabel } } } }
     });
   }
   // diagram opacity reflect toggles
@@ -860,10 +916,10 @@ function guessTokens(sec, charsPerToken){
 function applyGuess(group){
   const cpt=state.inp.charsPerToken||4;
   if(group==='voice'){
-    const g=guessTokens(state.inp.avgAutonomousSec,cpt);
+    const g=guessTokens((state.inp.voiceBotMin*(state.inp.voiceBotAutoPct/100)*60)/Math.max(state.inp.voiceBotCalls,1),cpt);
     state.inp.voiceBotInTok=g.inTok; state.inp.voiceBotOutTok=g.outTok; state.inp.voiceBotTtsChars=g.ttsChars;
   } else {
-    const g=guessTokens(state.inp.obAutonomousSec,cpt);
+    const g=guessTokens((state.inp.obBotMin*(state.inp.obBotAutoPct/100)*60)/Math.max(state.inp.obBotCalls,1),cpt);
     state.inp.obBotInTok=g.inTok; state.inp.obBotOutTok=g.outTok; state.inp.obBotTtsChars=g.ttsChars;
   }
   renderInputs(); update();
@@ -960,24 +1016,23 @@ const WIZ_STEPS = [
        <p class="text-xs text-slate-500 mt-1">Scripted IVR/flows and AI Assistant / AI QM always use their native Webex product regardless of this choice.</p>
      </div>`; } },
  { title:'Monthly volumes', render:()=>{ const f=[];
-     if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceCalls','avgScriptedSec','avgAutonomousSec'].map(wizField).join('')+'</div>');
-     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obCalls','obAutonomousSec','obTransferPct'].map(wizField).join('')+'</div>');
+     if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceBotCalls','voiceBotMin','voiceBotAutoPct','voiceAgentCalls','voiceAgentMin'].map(wizField).join('')+'</div>');
+     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obBotCalls','obBotMin','obBotAutoPct','obAgentCalls','obAgentMin'].map(wizField).join('')+'</div>');
      if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
      if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
        +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
      return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
  { title:'Automation vs. agent split', render:()=>{ const f=[];
-     if(wiz.channels.voice) f.push(wizField('voiceFwd'));
-     if(wiz.channels.outbound) f.push(wizField('obTransferPct'));
      if(wiz.channels.chat) f.push(wizField('chatFwd'));
      if(wiz.channels.email){ f.push(wizField('pctAutoHandled')); f.push(wizField('pctEscalated')); }
-     return `<p class="text-sm text-slate-600 mb-3">How much is handled automatically vs forwarded to a human agent. Agent-side AI cost applies only to the forwarded share.</p>
-       <div class="grid grid-cols-2 gap-3">${f.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}</div>
-       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Human-agent coverage (AI Assistant / QM Units)</div>
-       <div class="grid grid-cols-2 gap-3">${wizField('voiceHumanAht')}${wizField('avgAgentMsgs')}${wizField('assistCoverage')}</div>`; } },
+     return `<p class="text-sm text-slate-600 mb-3">How much is handled automatically vs forwarded to a human agent. Voice/outbound splits come from the live-agent vs voicebot call counts you entered. Agent-side AI cost applies only to the forwarded share.</p>
+       <div class="grid grid-cols-2 gap-3">${f.join('')||'<span class="text-sm text-slate-500">Voice/outbound use the call counts from the previous step.</span>'}</div>
+       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Live-agent chat &amp; coverage (AI Assistant / QM Units)</div>
+       <div class="grid grid-cols-2 gap-3">${wizField('avgAgentMsgs')}${wizField('assistCoverage')}</div>`; } },
  { title:'Webex & Cisco-billed pricing', render:()=>{
      const ccai = wiz.providers.googleCcai ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Google CCAI — Dialogflow CX (via Cisco): Flows = scripted, Playbooks = LLM</div><div class="grid grid-cols-2 gap-3">${wizRate('googleCcai','vaFlowsVoicePerSec')}${wizRate('googleCcai','vaFlowsRequest')}${wizRate('googleCcai','vaVoicePerSec')}${wizRate('googleCcai','vaRequest')}</div>` : '';
-     const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Bring Your Own Virtual Agent (Universal Harness)</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','connectorPerMin')}${wizRate('byova','byoPerMin')}</div>` : '';
+     const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">BYOVA — Bring Your Own Virtual Agent (A-FLEX-BYO): 1 Unit = 2,000 voice minutes</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','commit')}${wizRate('byova','overage')}</div>` : '';
+     const tpv = wiz.providers.tpaiVoice ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Third-Party AI Voice (via Webex): 1 Unit = 250 min (1,000 × 15-second increments)</div><div class="grid grid-cols-2 gap-3">${wizRate('tpaiVoice','commit')}${wizRate('tpaiVoice','overage')}</div>` : '';
      return `
      <p class="text-sm text-slate-600 mb-3">Enter your <b>Webex GPL Unit prices</b> (Committed &amp; Overage) and any Cisco-billed rates. Choose Committed or Overage in the Results panel. Third-party token rates can be tuned later in the Pricing panel.</p>
      <div class="text-xs font-semibold text-slate-700 mb-1">Webex — price per Unit (Committed / Overage)</div>
@@ -986,7 +1041,7 @@ const WIZ_STEPS = [
        ${wizRate('webexBundle','commit')}${wizRate('webexBundle','overage')}
        ${wizRate('webexAssistant','commit')}${wizRate('webexAssistant','overage')}
        ${wizRate('webexQM','commit')}${wizRate('webexQM','overage')}
-     </div>${ccai}${byo}`; } },
+     </div>${ccai}${byo}${tpv}`; } },
  { title:'All set', render:()=>`
    <p class="text-sm text-slate-600">You're ready. Your selections have been applied to the flows and results. Tweak any field directly (changed fields are highlighted), and use <b>↓ Save</b> to keep your scenario as a file. Reopen this wizard anytime from <b>⚙ Setup wizard</b>.</p>` }
 ];
