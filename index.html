@@ -34,6 +34,31 @@
   .tool-btn:hover { background:#f1f5f9; }
   .tool-btn.primary { background:var(--wx); color:#fff; border-color:var(--wx); }
   .tool-btn.primary:hover { background:var(--wx-d); }
+  /* ---- PDF report (built on demand, shown only when printing) ---- */
+  #report { display:none; }
+  #report .rpt-card { border:1px solid #dfe4ec; border-radius:8px; padding:9px 11px; }
+  #report h2 { font-size:11px; font-weight:800; margin:0 0 4px; }
+  .rpt-head { display:flex; align-items:center; gap:10px; border-bottom:2px solid var(--wx); padding-bottom:8px; margin-bottom:10px; }
+  .rpt-logo { width:26px; height:26px; border-radius:6px; background:var(--wx); color:#fff; font-weight:900; display:flex; align-items:center; justify-content:center; font-size:12px; }
+  .rpt-total { font-size:27px; font-weight:900; line-height:1; }
+  .rpt-hero { background:linear-gradient(135deg,var(--wx),var(--wx-d)); color:#fff; border:none !important; }
+  .rpt-chip { display:inline-block; font-size:9px; font-weight:700; padding:1px 8px; border-radius:999px; background:#eef7f0; color:var(--wx-d); border:1px solid #cdebd6; }
+  .rpt-table { width:100%; border-collapse:collapse; font-size:9.5px; }
+  .rpt-table th { text-align:left; background:#f1f5f9; padding:4px 6px; border-bottom:1px solid #dfe4ec; font-weight:700; }
+  .rpt-table td { padding:3px 6px; border-bottom:1px solid #eef1f5; }
+  .rpt-table .r { text-align:right; }
+  .rpt-chrow td { font-weight:800; background:#f8fafc; }
+  .rpt-kv { display:flex; justify-content:space-between; gap:8px; padding:1px 0; font-size:9px; }
+  .rpt-kv span { color:#64748b; }
+  .rpt-diagram { overflow:hidden; }
+  .rpt-diagram svg { width:100% !important; height:auto !important; display:block; }
+  @media print {
+    @page { size: 297mm 210mm landscape; margin: 8mm; }
+    html, body { width:297mm; background:#fff !important; }
+    body > * { display:none !important; }
+    #report { display:block !important; color:var(--ink); font-size:10px; }
+    .rpt-avoid { break-inside:avoid; }
+  }
 </style>
 </head>
 <body class="min-h-screen">
@@ -46,7 +71,10 @@
       <h1 class="text-lg font-bold leading-tight">Webex Contact Center — AI Cost Calculator</h1>
       <p class="text-xs text-slate-500">Estimate monthly AI spend across voice, chat and email flows. Click any AI touchpoint in a diagram for details.</p>
     </div>
-    <button type="button" id="btnWizard" class="ml-auto tool-btn primary">⚙ Setup wizard</button>
+    <div class="ml-auto flex items-center gap-2">
+      <button type="button" id="btnPdf" class="tool-btn">🖨 Export PDF</button>
+      <button type="button" id="btnWizard" class="tool-btn primary">⚙ Setup wizard</button>
+    </div>
   </div>
 </header>
 
@@ -264,6 +292,9 @@
 <footer class="w-full px-6 py-8 text-center text-xs text-slate-400">
   Single-file estimator · figures are indicative only · verify all pricing with the respective vendor.
 </footer>
+
+<!-- PDF report target (populated on demand, visible only when printing) -->
+<div id="report" aria-hidden="true"></div>
 
 <script>
 /* ============================ CONFIG ============================ */
@@ -925,6 +956,96 @@ function applyGuess(group){
   renderInputs(); update();
 }
 
+function buildReport(){
+  const { rows, byCh, total, unitTotals } = calc();
+  const num=x=>(+x||0).toLocaleString('en-US',{maximumFractionDigits:2});
+  const mode = state.commitMode==='overage' ? 'Overage' : 'Committed';
+  const aiSel = state.prov['s_agentai'];
+  const aiLabel = aiSel==='webexAssistant'?'AI Assistant Units':aiSel==='webexQM'?'AI QM Units':'AI Assistant + QM Units';
+  const date = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const canvas=document.getElementById('chart');
+  const chartImg = canvas ? canvas.toDataURL('image/png',1.0) : '';
+  const order=['voice','outbound','chat','email','subs'];
+  let tbody='';
+  order.forEach(ch=>{
+    const chRows=rows.filter(r=>r.channel===ch && r.cost>0);
+    if(!chRows.length) return;
+    tbody+=`<tr class="rpt-chrow"><td>${CH_NAMES[ch]}</td><td></td><td class="r"></td><td class="r">${fmt(byCh[ch])}</td></tr>`;
+    chRows.forEach(r=>{ tbody+=`<tr><td style="padding-left:16px">${r.label}</td><td style="color:#475569">${r.prov}</td><td class="r">${r.units?num(r.units)+' U':'\u2014'}</td><td class="r">${fmt(r.cost)}</td></tr>`; });
+  });
+  const GRP={voice:'Inbound voice',outbound:'Outbound',chat:'Chat',email:'Email',coverage:'Agent coverage',global:'Global'};
+  const inputsHtml=['voice','outbound','chat','email','coverage','global'].map(g=>{
+    const keys=Object.keys(INPUTS).filter(k=>INPUTS[k].group===g && !INPUTS[k].hidden);
+    if(!keys.length) return '';
+    return `<div class="rpt-card rpt-avoid"><h2>${GRP[g]}</h2>${keys.map(k=>`<div class="rpt-kv"><span>${INPUTS[k].label}</span><b>${num(state.inp[k])}${INPUTS[k].suffix||''}</b></div>`).join('')}</div>`;
+  }).join('');
+  const wxRows=[['webexAgent','AI Agent'],['webexAssistant','AI Assistant'],['webexQM','AI QM'],['webexBundle','Assistant + QM bundle'],['byova','BYOVA'],['tpaiVoice','Third-Party AI Voice']]
+    .map(([id,nm])=>`<tr><td>${nm}</td><td class="r">$${num(state.rates[id].commit)}</td><td class="r">$${num(state.rates[id].overage)}</td></tr>`).join('');
+  const hasTP=ch=>TP.some(t=>t.channel===ch && state.on[t.id]);
+  const diagHtml=['voice','outbound','chat','email'].filter(hasTP).map(ch=>{
+    const el=document.getElementById('diagram-'+ch);
+    return `<div class="rpt-card rpt-avoid"><h2>${CH_NAMES[ch]} flow</h2><div class="rpt-diagram">${el?el.innerHTML:''}</div></div>`;
+  }).join('');
+  document.getElementById('report').innerHTML=`
+    <div class="rpt-head">
+      <div class="rpt-logo">AI</div>
+      <div style="flex:1">
+        <div style="font-size:15px;font-weight:900">Webex Contact Center \u2014 AI Cost Estimate</div>
+        <div style="font-size:9px;color:#64748b">Generated ${date} \u00b7 Webex pricing: <b>${mode}</b> \u00b7 Monthly estimate</div>
+      </div>
+      <div class="rpt-chip">Indicative only</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1.15fr 1.15fr;gap:10px;margin-bottom:10px" class="rpt-avoid">
+      <div class="rpt-card rpt-hero">
+        <div style="font-size:9px;opacity:.9">Total per month</div>
+        <div class="rpt-total">${fmt(total)}</div>
+        <div style="font-size:9px;opacity:.9;margin-top:3px">\u2248 ${fmt(total*12)} / year</div>
+      </div>
+      <div class="rpt-card">
+        <h2>Consumption Units / month</h2>
+        <div class="rpt-kv"><span>AI Agent Units</span><b>${num(unitTotals.agent)}</b></div>
+        <div class="rpt-kv"><span>${aiLabel}</span><b>${num(unitTotals.agentAi)}</b></div>
+        <div class="rpt-kv"><span>Voice AI Units (BYOVA / 3rd-party)</span><b>${num(unitTotals.voiceai)}</b></div>
+        <div style="font-size:8px;color:#94a3b8;margin-top:4px">Units \u00d7 your ${mode} price per Unit \u2192 cost.</div>
+      </div>
+      <div class="rpt-card">
+        <h2>Cost by channel</h2>
+        <div style="display:flex;gap:8px;align-items:center">
+          ${chartImg?`<img src="${chartImg}" style="width:96px;height:96px;object-fit:contain">`:''}
+          <div style="flex:1">
+            ${order.filter(ch=>byCh[ch]>0).map(ch=>`<div class="rpt-kv"><span><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${CH_COLORS[ch]};margin-right:4px"></span>${CH_NAMES[ch]}</span><b>${fmt(byCh[ch])}</b></div>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.5fr 1fr;gap:10px;align-items:start">
+      <div class="rpt-card rpt-avoid">
+        <h2>Cost breakdown</h2>
+        <table class="rpt-table">
+          <thead><tr><th>Channel / touchpoint</th><th>Provider</th><th class="r">Units</th><th class="r">Monthly</th></tr></thead>
+          <tbody>${tbody||'<tr><td colspan="4" style="color:#94a3b8">No active AI touchpoints.</td></tr>'}</tbody>
+          <tfoot><tr class="rpt-chrow"><td>Total</td><td></td><td></td><td class="r">${fmt(total)}</td></tr></tfoot>
+        </table>
+      </div>
+      <div class="rpt-card rpt-avoid">
+        <h2>Webex Unit pricing ($ / Unit)</h2>
+        <table class="rpt-table">
+          <thead><tr><th>Product</th><th class="r">Committed</th><th class="r">Overage</th></tr></thead>
+          <tbody>${wxRows}</tbody>
+        </table>
+        <div style="font-size:8px;color:#94a3b8;margin-top:4px">Third-party token / per-second rates are configured in the tool's Pricing panel.</div>
+      </div>
+    </div>
+    ${diagHtml?`<h2 style="margin:12px 0 5px">Flow diagrams</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${diagHtml}</div>`:''}
+    <h2 style="margin:12px 0 5px">Key inputs &amp; assumptions</h2>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">${inputsHtml}</div>
+    <div style="font-size:8px;color:#94a3b8;margin-top:10px;border-top:1px solid #e6eaf0;padding-top:6px">
+      Pricing disclaimer: third-party AI rates are approximate public list prices and change often. Cisco Webex CC AI prices are not published and are shown as editable placeholders \u2014 confirm negotiated rates with your Cisco account team. This estimate is indicative only.
+    </div>`;
+  window.print();
+}
+
 function saveData(){
   const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
@@ -1104,6 +1225,7 @@ document.addEventListener('click',e=>{
   const g=e.target.closest('[data-guess]');
   if(g){ applyGuess(g.dataset.guess); return; }
   if(e.target.id==='btnSave'){ saveData(); return; }
+  if(e.target.id==='btnPdf'){ buildReport(); return; }
   if(e.target.id==='btnLoad'){ document.getElementById('fileLoad').click(); return; }
   if(e.target.id==='btnResetAll'){ resetAll(); return; }
   const cmBtn=e.target.closest('[data-commit]');
