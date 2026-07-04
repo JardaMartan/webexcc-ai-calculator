@@ -766,7 +766,6 @@ function renderDiagrams(){
     ${node(150,74,150,'Autonomous voicebot','Webex/3rd · Units','v_autonomous')}
     ${exitDown(225,128,num(vSelf)+' self-served')}
     ${arrow(300,370,70)}
-    ${alabel(335,55,'→ agent')}
     ${node(370,12,150,'👤 Live agent',num(vAg)+' calls')}
     ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
     ${arrow(520,550,70)}
@@ -787,7 +786,6 @@ function renderDiagrams(){
     ${node(160,88,150,'Autonomous voicebot','Webex/3rd · Units','o_autonomous')}
     ${exitDown(235,142,num(oSelf)+' self-served')}
     <path d="M310,84 C336,84 345,52 360,52" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
-    ${alabel(336,70,'→ agent')}
     ${node(360,28,150,'👤 Live agent',num(oAgN)+' calls')}
     ${fnode(360,88,150,'Real-time transcript','Assistant','assistant')}
     ${arrow(510,560,55)}
@@ -805,7 +803,6 @@ function renderDiagrams(){
     ${node(150,74,150,'Autonomous chatbot','Webex/3rd · Units','c_autonomous')}
     ${exitDown(225,128,num(chatSelf)+' self-served')}
     ${arrow(300,370,70)}
-    ${alabel(335,55,'→ agent')}
     ${node(370,12,150,'👤 Live agent',num(chatFwded)+' chats')}
     ${fnode(370,74,150,'AI Assistant','answers · topic','assistant')}
     ${arrow(520,550,70)}
@@ -823,7 +820,6 @@ function renderDiagrams(){
     ${node(310,92,140,'Auto-handle + reply','fully automated','e_autoresp')}
     ${exitDown(380,146,num(emailAuto)+' auto-resolved')}
     ${arrow(450,540,90)}
-    ${alabel(495,80,'→ agent')}
     ${node(540,63,150,'↳ Forward to agent',num(emailFwd)+' emails')}
     ${arrow(690,720,90)}
     ${node(720,6,150,'Email summary','before agent desktop','e_summary')}
