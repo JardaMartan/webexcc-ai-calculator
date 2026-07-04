@@ -528,8 +528,8 @@ function donutData(rows,byCh){
     const parts=rows.filter(r=>r.channel===ch && r.cost>0);
     const g={ name:CH_NAMES[ch], color:CH_COLORS[ch], cost:byCh[ch], parts:[] };
     parts.forEach((r,i)=>{ const frac = parts.length>1 ? i/(parts.length-1) : 0.5; const t = -0.35 + 1.05*frac; const col=shade(CH_COLORS[ch],t);
-      outer.data.push(r.cost); outer.colors.push(col); outer.labels.push(CH_NAMES[ch]+' · '+r.label);
-      g.parts.push({ label:r.label, color:col, cost:r.cost }); });
+      outer.data.push(r.cost); outer.colors.push(col); outer.labels.push(CH_NAMES[ch]+' · '+r.label+' — '+r.prov);
+      g.parts.push({ label:r.label, prov:r.prov, color:col, cost:r.cost }); });
     groups.push(g);
   });
   return { inner, outer, groups };
@@ -891,7 +891,7 @@ function update(){
   const dd=donutData(rows,byCh);
   document.getElementById('resultRows').innerHTML=dd.groups.map(g=>
     `<div class="flex justify-between font-medium"><span class="flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${g.color}"></span>${g.name}</span><b>${fmt(g.cost)}</b></div>`+
-    g.parts.map(p=>`<div class="flex justify-between text-xs text-slate-500 pl-6"><span class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full" style="background:${p.color}"></span>${p.label}</span><span>${fmt(p.cost)}</span></div>`).join('')
+    g.parts.map(p=>`<div class="flex justify-between text-xs text-slate-500 pl-6"><span class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full" style="background:${p.color}"></span>${p.label} <span class="text-slate-400">· ${p.prov}</span></span><span>${fmt(p.cost)}</span></div>`).join('')
   ).join('') || '<div class="text-sm text-slate-400">No costs yet.</div>';
   // per interaction
   const totalInt=c.voiceCalls+c.obCalls+c.chatVolume+c.emailVolume;
