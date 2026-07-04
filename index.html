@@ -756,7 +756,7 @@ function renderDiagrams(){
   const eAuto=Math.round(100-i.pctEscalated), eFwd=Math.round(i.pctEscalated);
   const num=x=>Math.round(x||0).toLocaleString('en-US');
   const vBot=i.voiceBotCalls||0, vAg=i.voiceAgentCalls||0, vSelf=Math.max(vBot-vAg,0);
-  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0;
+  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0, oSelf=Math.max(oBotN-oAgN,0);
   // Voice
   document.getElementById('diagram-voice').innerHTML =
   `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
@@ -766,7 +766,7 @@ function renderDiagrams(){
     ${node(150,74,150,'Autonomous voicebot','Webex/3rd · Units','v_autonomous')}
     ${exitDown(225,128,num(vSelf)+' self-served')}
     ${arrow(300,370,70)}
-    ${alabel(335,60,num(vAg)+' → agent')}
+    ${alabel(335,55,'→ agent')}
     ${node(370,12,150,'👤 Live agent',num(vAg)+' calls')}
     ${fnode(370,74,150,'Real-time transcript','Assistant','assistant')}
     ${arrow(520,550,70)}
@@ -785,7 +785,7 @@ function renderDiagrams(){
     ${alabel(140,77,num(oBotN))}
     ${node(160,28,150,'Scripted voicebot','Webex · Units','o_scripted')}
     ${node(160,88,150,'Autonomous voicebot','Webex/3rd · Units','o_autonomous')}
-    ${exitDown(235,142,'self-served')}
+    ${exitDown(235,142,num(oSelf)+' self-served')}
     <path d="M310,84 C336,84 345,52 360,52" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
     ${alabel(336,70,'→ agent')}
     ${node(360,28,150,'👤 Live agent',num(oAgN)+' calls')}
