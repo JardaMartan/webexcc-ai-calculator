@@ -752,11 +752,11 @@ const DEFS = `<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" re
 
 function renderDiagrams(){
   const i=state.inp;
-  const cFwd=Math.round(i.chatFwd);
-  const eAuto=Math.round(100-i.pctEscalated), eFwd=Math.round(i.pctEscalated);
   const num=x=>Math.round(x||0).toLocaleString('en-US');
   const vBot=i.voiceBotCalls||0, vAg=i.voiceAgentCalls||0, vSelf=Math.max(vBot-vAg,0);
-  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0, oSelf=Math.max(oBotN-oAgN,0);
+  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0, oSelf=Math.max(oBotN-oAgN,0), oTotal=Math.max(oBotN,oAgN);
+  const chatVol=i.chatVolume||0, chatFwded=Math.round(chatVol*(i.chatFwd/100)), chatSelf=Math.max(chatVol-chatFwded,0);
+  const emailVol=i.emailVolume||0, emailFwd=Math.round(emailVol*(i.pctEscalated/100)), emailAuto=Math.max(emailVol-emailFwd,0);
   // Voice
   document.getElementById('diagram-voice').innerHTML =
   `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
@@ -778,7 +778,7 @@ function renderDiagrams(){
   // Outbound: most calls dial straight to a live agent; some pass through a scripted+autonomous voicebot first
   document.getElementById('diagram-outbound').innerHTML =
   `<svg viewBox="0 0 900 180" width="900" class="max-w-none">${DEFS}
-    ${node(0,57,120,'📢 Campaign','progressive dialer')}
+    ${node(0,57,120,'📢 Campaign',num(oTotal)+' calls')}
     <path d="M120,68 C135,68 140,12 175,12 L345,12 C356,12 360,30 360,50" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
     ${alabel(255,23,'direct-dial')}
     ${arrow(120,160,84)}
@@ -799,14 +799,14 @@ function renderDiagrams(){
   // Chat
   document.getElementById('diagram-chat').innerHTML =
   `<svg viewBox="0 0 900 170" width="900" class="max-w-none">${DEFS}
-    ${node(0,43,120,'💬 Customer','web/app/WA/RCS')}
+    ${node(0,43,120,'💬 Customer',num(chatVol)+' chats')}
     ${arrow(120,150,70)}
     ${node(150,12,150,'Scripted chatbot','Webex · Units','c_scripted')}
     ${node(150,74,150,'Autonomous chatbot','Webex/3rd · Units','c_autonomous')}
-    ${exitDown(225,128,(100-cFwd)+'% self-served')}
+    ${exitDown(225,128,num(chatSelf)+' self-served')}
     ${arrow(300,370,70)}
-    ${alabel(335,60,cFwd+'% → agent')}
-    ${node(370,12,150,'👤 Live agent','human handling')}
+    ${alabel(335,55,'→ agent')}
+    ${node(370,12,150,'👤 Live agent',num(chatFwded)+' chats')}
     ${fnode(370,74,150,'AI Assistant','answers · topic','assistant')}
     ${arrow(520,550,70)}
     ${node(550,12,150,'Agent KB chat','3rd-party opt.','c_assist')}
@@ -815,16 +815,16 @@ function renderDiagrams(){
   // Email
   document.getElementById('diagram-email').innerHTML =
   `<svg viewBox="0 0 1180 200" width="1180" class="max-w-none">${DEFS}
-    ${node(0,63,110,'✉️ Email','inbound')}
+    ${node(0,63,110,'✉️ Email',num(emailVol)+' emails')}
     ${arrow(110,140,90)}
     ${node(140,63,140,'Classification','intent / routing','e_classify')}
     ${arrow(280,310,90)}
     ${node(310,34,140,'Attachment AI','vision / OCR','e_attach')}
     ${node(310,92,140,'Auto-handle + reply','fully automated','e_autoresp')}
-    ${exitDown(380,146,eAuto+'% auto-resolved')}
+    ${exitDown(380,146,num(emailAuto)+' auto-resolved')}
     ${arrow(450,540,90)}
-    ${alabel(495,80,eFwd+'% → agent')}
-    ${node(540,63,150,'↳ Forward to agent','to a human agent')}
+    ${alabel(495,80,'→ agent')}
+    ${node(540,63,150,'↳ Forward to agent',num(emailFwd)+' emails')}
     ${arrow(690,720,90)}
     ${node(720,6,150,'Email summary','before agent desktop','e_summary')}
     ${node(720,64,150,'Suggested reply · KB','before agent desktop','e_suggest')}
