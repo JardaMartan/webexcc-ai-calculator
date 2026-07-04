@@ -1103,7 +1103,7 @@ const CH_LABEL = { voice:'Inbound voice', outbound:'Outbound campaign', chat:'Di
 
 function wizField(key,labelOverride){
   const d=INPUTS[key];
-  const lbl=labelOverride||d.label;
+  const lbl=(typeof labelOverride==='string' && labelOverride) ? labelOverride : d.label;
   return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
     <span class="flex items-center gap-1">${lbl} ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}</span>
     <input type="number" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
