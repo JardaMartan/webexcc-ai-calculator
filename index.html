@@ -1236,6 +1236,38 @@ document.addEventListener('click',e=>{
   if(cmBtn){ state.commitMode=cmBtn.dataset.commit; update(); return; }
 });
 
+/* ============================ FAST TOOLTIPS ============================ */
+// Replace slow native title tooltips with a custom one that appears after ~120ms.
+(function(){
+  const tip=document.createElement('div');
+  tip.style.cssText='position:fixed;z-index:9999;max-width:340px;background:#0b1220;color:#fff;font-size:11px;line-height:1.4;padding:6px 9px;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.28);pointer-events:none;white-space:pre-line;opacity:0;transition:opacity .1s;display:none;';
+  document.body.appendChild(tip);
+  let timer=null, cur=null;
+  function place(el){
+    const r=el.getBoundingClientRect(); tip.style.display='block';
+    const t=tip.getBoundingClientRect();
+    let left=r.left, top=r.bottom+6;
+    if(left+t.width>innerWidth-6) left=innerWidth-6-t.width;
+    if(top+t.height>innerHeight-6) top=r.top-6-t.height;
+    tip.style.left=Math.max(6,left)+'px'; tip.style.top=Math.max(6,top)+'px';
+    requestAnimationFrame(()=>{ tip.style.opacity='1'; });
+  }
+  function hide(){ clearTimeout(timer); cur=null; tip.style.opacity='0'; tip.style.display='none'; }
+  document.addEventListener('mouseover',e=>{
+    const el=e.target.closest('[title],[data-tip]'); if(!el) return;
+    if(el.hasAttribute('title')){ el.setAttribute('data-tip', el.getAttribute('title')); el.removeAttribute('title'); }
+    if(cur===el) return; cur=el; clearTimeout(timer);
+    const txt=el.getAttribute('data-tip'); if(!txt){ return; }
+    tip.textContent=txt;
+    timer=setTimeout(()=>{ if(cur===el) place(el); },120);
+  });
+  document.addEventListener('mouseout',e=>{
+    const el=e.target.closest('[data-tip]'); if(el && !el.contains(e.relatedTarget)) hide();
+  });
+  window.addEventListener('scroll',hide,true);
+  window.addEventListener('click',hide,true);
+})();
+
 /* ============================ INIT ============================ */
 renderInputs();
 applyAgentAi();
