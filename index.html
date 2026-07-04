@@ -25,6 +25,7 @@
   @keyframes fl { 0%{ background:#d7f7e4;} 100%{ background:transparent;} }
   .modal-bg { background:rgba(6,12,24,.5); }
   input.changed { border-color:#f59e0b !important; background:#fff7ed; }
+  input.invalid { border-color:#ef4444 !important; background:#fef2f2; }
   .revert-btn { color:#f59e0b; font-size:12px; line-height:1; border:none; background:none; cursor:pointer; padding:0 2px; }
   .revert-btn:hover { color:#b45309; }
   .revert-btn.hidden { display:none; }
@@ -106,6 +107,7 @@
       </div>
       <p class="text-xs text-slate-500 mb-4">Enter your monthly traffic and durations per channel. Every cost below is derived from these numbers. Changed fields are highlighted — use ↺ to revert a field to its default.</p>
       <div id="inputSections" class="space-y-6"></div>
+      <div id="inputWarnings" class="mt-4 space-y-1"></div>
     </section>
 
     <!-- ============ STEP 2: SCENARIO SETUP ============ -->
@@ -587,7 +589,7 @@ function inputField(key){
       ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}
       <button type="button" class="revert-btn ${changed?'':'hidden'}" data-revert="${key}" title="Revert to default (${d.v})">↺</button>
     </span>
-    <input type="number" class="num ${changed?'changed':''}" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
+    <input type="number" class="num ${changed?'changed':''}" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0" ${d.suffix==='%'?'max="100"':''}>
   </label>`;
 }
 function renderInputs(){
@@ -912,6 +914,23 @@ function update(){
   renderDiagrams();
   // live Webex Unit formulas
   renderFormulas(c);
+  // input validation warnings
+  const warns=validateInputs();
+  const wb=document.getElementById('inputWarnings');
+  if(wb) wb.innerHTML = warns.map(x=>`<div class="rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs px-3 py-2">⚠ ${x}</div>`).join('');
+  const vaEl=document.querySelector('[data-inp="voiceAgentCalls"]');
+  if(vaEl) vaEl.classList.toggle('invalid', (state.inp.voiceAgentCalls||0) > (state.inp.voiceBotCalls||0));
+}
+
+// Cross-field sanity checks derived from the calculation model.
+function validateInputs(){
+  const i=state.inp, w=[], n=x=>Math.round(x||0).toLocaleString('en-US');
+  if((i.voiceAgentCalls||0) > (i.voiceBotCalls||0))
+    w.push('Inbound voice: live-agent calls ('+n(i.voiceAgentCalls)+') cannot exceed voicebot calls ('+n(i.voiceBotCalls)+') — every inbound call passes through the voicebot first.');
+  [['voiceBotAutoPct','Inbound voice — Autonomous % of bot minutes'],['obBotAutoPct','Outbound — Autonomous % of bot minutes'],['chatFwd','Chat — % forwarded to agent'],['chatAutoMix','Chat — Autonomous digital %'],['pctEscalated','Email — % forwarded to agent'],['pctWithAttach','Email — % with attachments']].forEach(([k,lbl])=>{
+    const v=i[k]; if(v<0||v>100) w.push(lbl+' must be between 0 and 100%.');
+  });
+  return w;
 }
 
 function syncToggles(){
@@ -1106,7 +1125,7 @@ function wizField(key,labelOverride){
   const lbl=(typeof labelOverride==='string' && labelOverride) ? labelOverride : d.label;
   return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
     <span class="flex items-center gap-1">${lbl} ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}</span>
-    <input type="number" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
+    <input type="number" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0" ${d.suffix==='%'?'max="100"':''}>
   </label>`;
 }
 function wizRate(prov,key){
@@ -1174,6 +1193,8 @@ function wizRender(){
   document.getElementById('wizStepInfo').textContent=`Step ${wiz.step+1} of ${WIZ_STEPS.length}`;
   document.getElementById('wizBar').style.width=((wiz.step+1)/WIZ_STEPS.length*100)+'%';
   document.getElementById('wizBody').innerHTML=s.render();
+  const warns=validateInputs();
+  if(warns.length) document.getElementById('wizBody').insertAdjacentHTML('beforeend', `<div class="mt-3 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs px-3 py-2">⚠ ${warns.join('<br>')}</div>`);
   document.getElementById('wizBack').style.visibility = wiz.step===0?'hidden':'visible';
   document.getElementById('wizNext').textContent = wiz.step===WIZ_STEPS.length-1?'Finish ✓':'Next →';
 }
@@ -1199,7 +1220,7 @@ document.getElementById('wizard').addEventListener('click',e=>{ if(e.target.id==
 /* ============================ EVENTS ============================ */
 document.addEventListener('input',e=>{
   const el=e.target;
-  if(el.dataset.inp!==undefined){ state.inp[el.dataset.inp]=parseFloat(el.value)||0; refreshField(el.dataset.inp); update(); }
+  if(el.dataset.inp!==undefined){ let v=parseFloat(el.value); if(isNaN(v)) v=0; const d=INPUTS[el.dataset.inp]; if(d&&d.suffix==='%'){ v=Math.min(100,Math.max(0,v)); if(String(v)!==el.value && el.value!=='') el.value=v; } state.inp[el.dataset.inp]=v; refreshField(el.dataset.inp); update(); }
   else if(el.dataset.rate!==undefined){ state.rates[el.dataset.rate][el.dataset.key]=parseFloat(el.value)||0; update(); }
 });
 document.addEventListener('change',e=>{
