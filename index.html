@@ -412,8 +412,7 @@ const INPUTS = {
   avgAttach:{ label:'Attachments / email', v:1.5, group:'email', step:0.1, info:'Average number of attachments on emails that have attachments.' },
   avgAttachSizeMB:{ label:'Avg attachment size (MB)', v:1.2, group:'email', step:0.1, info:'Average attachment size. Larger files span more pages/images, increasing vision/OCR cost.' },
   mbPerPage:{ label:'MB per analysed page', v:0.5, group:'email', step:0.1, info:'How many MB correspond to one analysed page/image. Pages = max(1, avg size MB ÷ this). Each page is charged as one vision image.' },
-  pctAutoHandled:{ label:'% handled automatically', v:40, group:'email', suffix:'%', info:'Share of emails fully resolved by AI (auto-response generated, never reaches an agent).' },
-  pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. Drives summary + suggested-response + optimisation AI cost.' },
+  pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. The rest (100 − this) are handled automatically by AI. Drives summary + suggested-response + optimisation AI cost.' },
   // human-agent coverage (AI Assistant / AI QM Units)
   avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'coverage', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / QM digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
   assistCoverage:{ label:'AI Assistant/QM coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions covered by AI Assistant / QM. Multiplies the covered minutes/sessions before converting to Units.' }
@@ -549,7 +548,7 @@ function ctx(){
   c.chatSessions   = i.chatVolume*Math.ceil(i.avgCustomerMsgs/10);
   c.chatEscalated  = i.chatVolume*(i.chatFwd/100);
   c.pctWithAttach  = i.pctWithAttach/100;
-  c.pctAutoHandled = i.pctAutoHandled/100;
+  c.pctAutoHandled = (100 - i.pctEscalated)/100;
   c.pctEscalated   = i.pctEscalated/100;
   c.emailEscalated = i.emailVolume*(i.pctEscalated/100);
   // AI Assistant / AI QM consumption units (covered human-handled interactions)
@@ -754,7 +753,7 @@ const DEFS = `<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="6" re
 function renderDiagrams(){
   const i=state.inp;
   const cFwd=Math.round(i.chatFwd);
-  const eAuto=Math.round(i.pctAutoHandled), eFwd=Math.round(i.pctEscalated);
+  const eAuto=Math.round(100-i.pctEscalated), eFwd=Math.round(i.pctEscalated);
   const num=x=>Math.round(x||0).toLocaleString('en-US');
   const vBot=i.voiceBotCalls||0, vAg=i.voiceAgentCalls||0, vSelf=Math.max(vBot-vAg,0);
   const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0;
@@ -1149,7 +1148,7 @@ const WIZ_STEPS = [
      return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
  { title:'Automation vs. agent split', render:()=>{ const f=[];
      if(wiz.channels.chat) f.push(wizField('chatFwd'));
-     if(wiz.channels.email){ f.push(wizField('pctAutoHandled')); f.push(wizField('pctEscalated')); }
+     if(wiz.channels.email){ f.push(wizField('pctEscalated')); }
      return `<p class="text-sm text-slate-600 mb-3">How much is handled automatically vs forwarded to a human agent. Voice/outbound splits come from the live-agent vs voicebot call counts you entered. Agent-side AI cost applies only to the forwarded share.</p>
        <div class="grid grid-cols-2 gap-3">${f.join('')||'<span class="text-sm text-slate-500">Voice/outbound use the call counts from the previous step.</span>'}</div>
        <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Live-agent chat &amp; coverage (AI Assistant / QM Units)</div>
