@@ -1101,10 +1101,11 @@ const WIZ_CH_TP = {
 const AUTO_BOT_TP = ['v_autonomous','o_autonomous','c_autonomous'];
 const CH_LABEL = { voice:'Inbound voice', outbound:'Outbound campaign', chat:'Digital / chat', email:'Email' };
 
-function wizField(key){
+function wizField(key,labelOverride){
   const d=INPUTS[key];
+  const lbl=labelOverride||d.label;
   return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
-    <span class="flex items-center gap-1">${d.label} ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}</span>
+    <span class="flex items-center gap-1">${lbl} ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}</span>
     <input type="number" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0">
   </label>`;
 }
@@ -1142,11 +1143,13 @@ const WIZ_STEPS = [
      if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
        +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
      return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
- { title:'Automation vs. agent split', render:()=>{ const f=[];
-     if(wiz.channels.chat) f.push(wizField('chatFwd'));
-     if(wiz.channels.email){ f.push(wizField('pctEscalated')); }
-     return `<p class="text-sm text-slate-600 mb-3">How much is handled automatically vs forwarded to a human agent. Voice/outbound splits come from the live-agent vs voicebot call counts you entered. Agent-side AI cost applies only to the forwarded share.</p>
-       <div class="grid grid-cols-2 gap-3">${f.join('')||'<span class="text-sm text-slate-500">Voice/outbound use the call counts from the previous step.</span>'}</div>
+ { title:'Automation vs. agent split', render:()=>{ const sec=[];
+     if(wiz.channels.voice) sec.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice — routing (calls / month)</div><div class="grid grid-cols-2 gap-3">'+wizField('voiceBotCalls','Handled by voicebot')+wizField('voiceAgentCalls','Reach a live agent')+'</div>');
+     if(wiz.channels.outbound) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound — routing (calls / month)</div><div class="grid grid-cols-2 gap-3">'+wizField('obBotCalls','Via voicebot')+wizField('obAgentCalls','Reach a live agent (direct + transferred)')+'</div><p class="text-[11px] text-slate-500 mt-1">Calls not going via the voicebot are dialled straight to an agent. Direct-dial + transferred-from-bot = the live-agent count.</p>');
+     if(wiz.channels.chat) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Digital / chat</div><div class="grid grid-cols-2 gap-3">'+wizField('chatFwd','Chat — % forwarded to agent')+'</div>');
+     if(wiz.channels.email) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-2 gap-3">'+wizField('pctEscalated','Email — % forwarded to agent')+'</div>');
+     return `<p class="text-sm text-slate-600 mb-3">Set how interactions split between automation and a live agent. Voice &amp; outbound use monthly call counts (voicebot vs live-agent); chat &amp; email use a forwarded percentage. Agent-side AI cost applies only to the live-agent / forwarded share.</p>
+       ${sec.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}
        <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Live-agent chat &amp; coverage (AI Assistant / QM Units)</div>
        <div class="grid grid-cols-2 gap-3">${wizField('avgAgentMsgs')}${wizField('assistCoverage')}</div>`; } },
  { title:'Webex & Cisco-billed pricing', render:()=>{
