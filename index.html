@@ -390,11 +390,12 @@ const INPUTS = {
   voiceBotTtsChars:{ label:'Bot TTS chars / call', v:600, group:'voice', info:'Average text-to-speech characters the bot speaks per call, for token/character-priced 3rd-party voicebots.' },
   voiceAssistTok:{ label:'Agent KB-chat tok / call', v:1200, group:'voice', info:'Tokens per live-agent call for the optional 3rd-party agent KB-chat (knowledge-base answers, not conversation-aware).' },
   // outbound voice campaign
-  obBotCalls:{ label:'Voicebot calls / month', v:3000, group:'outbound', info:'Number of outbound calls per month first handled by a voicebot (the rest are dialled straight to a live agent).' },
-  obBotMin:{ label:'Voicebot minutes / month', v:3250, group:'outbound', info:'Total monthly minutes those calls spend with the voicebot. Split below into scripted vs autonomous.' },
+  obDirectCalls:{ label:'Direct-to-agent calls / month', v:8000, group:'outbound', info:'Outbound calls per month dialled straight to a live agent, with no voicebot.' },
+  obBotCalls:{ label:'Voicebot calls / month', v:3000, group:'outbound', info:'Outbound calls per month first handled by a voicebot. A share of these transfer to an agent (below); the rest self-serve.' },
+  obBotTransferPct:{ label:'% of voicebot calls → agent', v:60, group:'outbound', suffix:'%', info:'Share of the voicebot-handled calls that transfer to a live agent; the remainder self-serve (resolved by the bot).' },
+  obBotMin:{ label:'Voicebot minutes / month', v:3250, group:'outbound', info:'Total monthly minutes those voicebot calls spend with the voicebot. Split below into scripted vs autonomous.' },
   obBotAutoPct:{ label:'Autonomous % of bot minutes', v:70, group:'outbound', suffix:'%', info:'Share of the voicebot minutes handled by the autonomous (LLM) bot; the rest is the scripted (flow/IVR) bot.' },
-  obAgentCalls:{ label:'Live-agent calls / month', v:11000, group:'outbound', info:'Number of outbound calls per month that reach a live agent (direct-dial + transferred-from-bot).' },
-  obAgentMin:{ label:'Live-agent minutes / month', v:44000, group:'outbound', info:'Total monthly minutes those calls spend with the agent. Voicebot time is separate and additive. Drives AI Assistant / QM voice minutes.' },
+  obAgentMin:{ label:'Live-agent minutes / month', v:44000, group:'outbound', info:'Total monthly minutes spent with a live agent across all agent-handled calls (direct-dial + transferred-from-bot). Voicebot time is separate and additive. Drives AI Assistant / QM voice minutes.' },
   obBotInTok:{ label:'Bot LLM input tok / call', v:1000, group:'outbound', info:'Average LLM input tokens per call for a token-priced 3rd-party outbound voicebot. Ignored for Webex/CCAI/BYOVA.' },
   obBotOutTok:{ label:'Bot LLM output tok / call', v:300, group:'outbound', info:'Average LLM output tokens per call for a token-priced 3rd-party outbound voicebot.' },
   obBotTtsChars:{ label:'Bot TTS chars / call', v:500, group:'outbound', info:'Average TTS characters spoken per call for a 3rd-party outbound voicebot.' },
@@ -502,7 +503,7 @@ const TP = [
 // Providers the user can choose between across touchpoints (excludes the single-option
 // Webex AI Assistant / AI QM which are the only provider for their touchpoints).
 const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
@@ -541,9 +542,12 @@ function ctx(){
   const i = state.inp;
   const c = {...i};
   c.voiceCalls       = Math.max(i.voiceBotCalls, i.voiceAgentCalls);
-  c.obCalls          = Math.max(i.obBotCalls, i.obAgentCalls);
+  c.obTransferredFromBot = i.obBotCalls*(i.obBotTransferPct/100);
+  c.obSelfServed     = i.obBotCalls*(1 - i.obBotTransferPct/100);
+  c.obAgentCalls     = i.obDirectCalls + c.obTransferredFromBot;
+  c.obCalls          = i.obDirectCalls + i.obBotCalls;
   c.voiceEscalated   = i.voiceAgentCalls;
-  c.obTransferred    = i.obAgentCalls;
+  c.obTransferred    = c.obAgentCalls;
   c.voiceScriptedMin = i.voiceBotMin*(1-i.voiceBotAutoPct/100);
   c.voiceAutoMin     = i.voiceBotMin*(i.voiceBotAutoPct/100);
   c.obScriptedMin    = i.obBotMin*(1-i.obBotAutoPct/100);
@@ -757,7 +761,7 @@ function renderDiagrams(){
   const i=state.inp;
   const num=x=>Math.round(x||0).toLocaleString('en-US');
   const vBot=i.voiceBotCalls||0, vAg=i.voiceAgentCalls||0, vSelf=Math.max(vBot-vAg,0);
-  const oBotN=i.obBotCalls||0, oAgN=i.obAgentCalls||0, oSelf=Math.max(oBotN-oAgN,0), oTotal=Math.max(oBotN,oAgN);
+  const oBotN=i.obBotCalls||0, oDirectN=i.obDirectCalls||0, oTransfer=Math.round(oBotN*((i.obBotTransferPct||0)/100)), oSelf=Math.max(oBotN-oTransfer,0), oAgN=oDirectN+oTransfer, oTotal=oDirectN+oBotN;
   const chatVol=i.chatVolume||0, chatFwded=Math.round(chatVol*(i.chatFwd/100)), chatSelf=Math.max(chatVol-chatFwded,0);
   const emailVol=i.emailVolume||0, emailFwd=Math.round(emailVol*(i.pctEscalated/100)), emailAuto=Math.max(emailVol-emailFwd,0);
   // Voice
@@ -782,7 +786,7 @@ function renderDiagrams(){
   `<svg viewBox="0 0 900 180" width="900" class="max-w-none">${DEFS}
     ${node(0,57,120,'📢 Campaign',num(oTotal)+' calls')}
     <path d="M120,68 C135,68 140,12 175,12 L345,12 C356,12 360,30 360,50" fill="none" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#ar)"></path>
-    ${alabel(255,23,'direct-dial')}
+    ${alabel(255,23,num(oDirectN)+' direct')}
     ${arrow(120,160,84)}
     ${alabel(140,77,num(oBotN))}
     ${node(160,28,150,'Scripted voicebot','Webex · Units','o_scripted')}
@@ -948,11 +952,14 @@ function validateInputs(){
   if((i.voiceAgentCalls||0) > (i.voiceBotCalls||0))
     err('Inbound voice: live-agent calls ('+n(i.voiceAgentCalls)+') cannot exceed voicebot calls ('+n(i.voiceBotCalls)+') — every inbound call passes through the voicebot first.');
   // Soft data-consistency hints (valid, but likely a data gap that yields $0)
-  [['voiceBotCalls','voiceBotMin','Inbound voice voicebot'],['voiceAgentCalls','voiceAgentMin','Inbound voice live-agent'],['obBotCalls','obBotMin','Outbound voicebot'],['obAgentCalls','obAgentMin','Outbound live-agent']].forEach(([ck,mk,lbl])=>{
+  [['voiceBotCalls','voiceBotMin','Inbound voice voicebot'],['voiceAgentCalls','voiceAgentMin','Inbound voice live-agent'],['obBotCalls','obBotMin','Outbound voicebot']].forEach(([ck,mk,lbl])=>{
     const c=i[ck]||0, m=i[mk]||0;
     if(c>0 && m===0) warn(lbl+': calls entered but 0 minutes — its Units/cost will be $0.');
     if(m>0 && c===0) warn(lbl+': minutes entered but 0 calls.');
   });
+  const obAg=(i.obDirectCalls||0)+(i.obBotCalls||0)*((i.obBotTransferPct||0)/100);
+  if(obAg>0 && (i.obAgentMin||0)===0) warn('Outbound live-agent: calls reach an agent but 0 live-agent minutes — Assistant/QM cost will be $0.');
+  if((i.obAgentMin||0)>0 && obAg===0) warn('Outbound live-agent: minutes entered but no calls reach an agent.');
   if((i.chatVolume||0)>0 && (i.avgCustomerMsgs||0)<=0) warn('Chat: “Customer msgs / chat” is 0 — no digital sessions will be counted.');
   if((i.chatVolume||0)>0 && (i.chatFwd||0)>0 && (i.avgAgentMsgs||0)<=0) warn('Chat: “Chat msgs with live agent” is 0 — no AI Assistant / QM digital sessions counted.');
   return out;
@@ -1182,14 +1189,14 @@ const WIZ_STEPS = [
      </div>`; } },
  { title:'Monthly volumes', render:()=>{ const f=[];
      if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceBotCalls','voiceBotMin','voiceBotAutoPct','voiceAgentCalls','voiceAgentMin'].map(wizField).join('')+'</div>');
-     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obBotCalls','obBotMin','obBotAutoPct','obAgentCalls','obAgentMin'].map(wizField).join('')+'</div>');
+     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obDirectCalls','obBotCalls','obBotTransferPct','obBotMin','obBotAutoPct','obAgentMin'].map(wizField).join('')+'</div>');
      if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
      if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
        +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
      return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
  { title:'Automation vs. agent split', render:()=>{ const sec=[];
      if(wiz.channels.voice) sec.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice — routing (calls / month)</div><div class="grid grid-cols-2 gap-3">'+wizField('voiceBotCalls','Handled by voicebot')+wizField('voiceAgentCalls','Reach a live agent')+'</div>');
-     if(wiz.channels.outbound) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound — routing (calls / month)</div><div class="grid grid-cols-2 gap-3">'+wizField('obBotCalls','Via voicebot')+wizField('obAgentCalls','Reach a live agent (direct + transferred)')+'</div><p class="text-[11px] text-slate-500 mt-1">Calls not going via the voicebot are dialled straight to an agent. Direct-dial + transferred-from-bot = the live-agent count.</p>');
+     if(wiz.channels.outbound) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound — routing</div><div class="grid grid-cols-3 gap-3">'+wizField('obDirectCalls','Direct to agent (calls/mo)')+wizField('obBotCalls','Via voicebot (calls/mo)')+wizField('obBotTransferPct','Of voicebot calls, % → agent')+'</div><p class="text-[11px] text-slate-500 mt-1">The rest of the voicebot calls self-serve. Total agent calls = direct + (voicebot × transfer%).</p>');
      if(wiz.channels.chat) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Digital / chat</div><div class="grid grid-cols-2 gap-3">'+wizField('chatFwd','Chat — % forwarded to agent')+'</div>');
      if(wiz.channels.email) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-2 gap-3">'+wizField('pctEscalated','Email — % forwarded to agent')+'</div>');
      return `<p class="text-sm text-slate-600 mb-3">Set how interactions split between automation and a live agent. Voice &amp; outbound use monthly call counts (voicebot vs live-agent); chat &amp; email use a forwarded percentage. Agent-side AI cost applies only to the live-agent / forwarded share.</p>
