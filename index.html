@@ -267,6 +267,7 @@
       <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden"><div id="wizBar" class="h-full" style="background:var(--wx);width:0%"></div></div>
     </div>
     <div class="p-5 overflow-y-auto" id="wizBody"></div>
+    <div id="wizWarn" class="px-5"></div>
     <div class="p-4 border-t border-slate-200 flex items-center gap-2">
       <button type="button" class="tool-btn" id="wizSkip">Skip</button>
       <div class="ml-auto flex gap-2">
@@ -914,23 +915,41 @@ function update(){
   renderDiagrams();
   // live Webex Unit formulas
   renderFormulas(c);
-  // input validation warnings
+  // input validation warnings (live, shown in panel and wizard)
   const warns=validateInputs();
-  const wb=document.getElementById('inputWarnings');
-  if(wb) wb.innerHTML = warns.map(x=>`<div class="rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs px-3 py-2">⚠ ${x}</div>`).join('');
+  const wb=document.getElementById('inputWarnings'); if(wb) wb.innerHTML=warnHtml(warns);
+  const ww=document.getElementById('wizWarn'); if(ww) ww.innerHTML=warnHtml(warns);
   const vaEl=document.querySelector('[data-inp="voiceAgentCalls"]');
   if(vaEl) vaEl.classList.toggle('invalid', (state.inp.voiceAgentCalls||0) > (state.inp.voiceBotCalls||0));
 }
 
+// Render a validation list (array of {level,msg}) as coloured notice rows.
+function warnHtml(list){
+  return list.map(x=>{
+    const cls = x.level==='err' ? 'border-red-300 bg-red-50 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-800';
+    const ic  = x.level==='err' ? '⛔' : '⚠';
+    return `<div class="rounded-lg border ${cls} text-xs px-3 py-2 mb-1">${ic} ${x.msg}</div>`;
+  }).join('');
+}
+
 // Cross-field sanity checks derived from the calculation model.
 function validateInputs(){
-  const i=state.inp, w=[], n=x=>Math.round(x||0).toLocaleString('en-US');
+  const i=state.inp, out=[], n=x=>Math.round(x||0).toLocaleString('en-US');
+  const err=m=>out.push({level:'err',msg:m}), warn=m=>out.push({level:'warn',msg:m});
+  // Hard errors (logically impossible in the model)
   if((i.voiceAgentCalls||0) > (i.voiceBotCalls||0))
-    w.push('Inbound voice: live-agent calls ('+n(i.voiceAgentCalls)+') cannot exceed voicebot calls ('+n(i.voiceBotCalls)+') — every inbound call passes through the voicebot first.');
+    err('Inbound voice: live-agent calls ('+n(i.voiceAgentCalls)+') cannot exceed voicebot calls ('+n(i.voiceBotCalls)+') — every inbound call passes through the voicebot first.');
   [['voiceBotAutoPct','Inbound voice — Autonomous % of bot minutes'],['obBotAutoPct','Outbound — Autonomous % of bot minutes'],['chatFwd','Chat — % forwarded to agent'],['chatAutoMix','Chat — Autonomous digital %'],['pctEscalated','Email — % forwarded to agent'],['pctWithAttach','Email — % with attachments']].forEach(([k,lbl])=>{
-    const v=i[k]; if(v<0||v>100) w.push(lbl+' must be between 0 and 100%.');
+    const v=i[k]; if(v<0||v>100) err(lbl+' must be between 0 and 100%.');
   });
-  return w;
+  // Soft data-consistency hints (valid, but likely a data gap that yields $0)
+  [['voiceBotCalls','voiceBotMin','Inbound voice voicebot'],['voiceAgentCalls','voiceAgentMin','Inbound voice live-agent'],['obBotCalls','obBotMin','Outbound voicebot'],['obAgentCalls','obAgentMin','Outbound live-agent']].forEach(([ck,mk,lbl])=>{
+    const c=i[ck]||0, m=i[mk]||0;
+    if(c>0 && m===0) warn(lbl+': calls entered but 0 minutes — its Units/cost will be $0.');
+    if(m>0 && c===0) warn(lbl+': minutes entered but 0 calls.');
+  });
+  if((i.chatVolume||0)>0 && (i.avgCustomerMsgs||0)<=0) warn('Chat: “Customer msgs / chat” is 0 — no digital sessions will be counted.');
+  return out;
 }
 
 function syncToggles(){
@@ -1193,8 +1212,7 @@ function wizRender(){
   document.getElementById('wizStepInfo').textContent=`Step ${wiz.step+1} of ${WIZ_STEPS.length}`;
   document.getElementById('wizBar').style.width=((wiz.step+1)/WIZ_STEPS.length*100)+'%';
   document.getElementById('wizBody').innerHTML=s.render();
-  const warns=validateInputs();
-  if(warns.length) document.getElementById('wizBody').insertAdjacentHTML('beforeend', `<div class="mt-3 rounded-lg border border-red-300 bg-red-50 text-red-700 text-xs px-3 py-2">⚠ ${warns.join('<br>')}</div>`);
+  document.getElementById('wizWarn').innerHTML=warnHtml(validateInputs());
   document.getElementById('wizBack').style.visibility = wiz.step===0?'hidden':'visible';
   document.getElementById('wizNext').textContent = wiz.step===WIZ_STEPS.length-1?'Finish ✓':'Next →';
 }
