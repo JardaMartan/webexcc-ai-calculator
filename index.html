@@ -598,7 +598,7 @@ function renderInputs(){
     const keys=Object.keys(INPUTS).filter(k=>INPUTS[k].group===g && !INPUTS[k].hidden);
     const dot = (g==='global'||g==='coverage') ? '#8b5cf6' : CH_COLORS[g];
     const guessBtn = (g==='voice'||g==='outbound')
-      ? `<button type="button" class="tool-btn ml-auto" data-guess="${g}" title="Estimate bot LLM tokens and TTS characters from the autonomous voicebot duration">✨ Guesstimate bot tokens</button>` : '';
+      ? `<button type="button" class="tool-btn ml-auto" data-guess="${g}" title="Fills the bot LLM-token & TTS fields below from your call data.&#10;&#10;1) Autonomous sec/call = (voicebot minutes × autonomous%) ÷ voicebot calls × 60&#10;2) Speech ≈ 150 wpm ≈ 12.5 chars/sec, split ~50% customer / ~50% bot&#10;3) Turns ≈ sec/call ÷ 20 (one exchange per ~20s)&#10;4) Input tok/call = turns × 700 (system prompt + KB, re-sent each turn) + re-sent history (≈ ½ transcript × turns)&#10;5) Output tok/call = bot-speech chars ÷ chars-per-token&#10;6) TTS chars/call = bot-speech seconds × 12.5&#10;&#10;Chars-per-token comes from the Global assumptions. Only affects token-priced 3rd-party bots.">✨ Guesstimate bot tokens</button>` : '';
     return `<div>
       <div class="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
         <span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${dot}"></span>${labels[g]}${guessBtn}
@@ -931,17 +931,21 @@ function refreshField(key){
   wrap.querySelector('.revert-btn').classList.toggle('hidden', !changed);
 }
 
-// Estimate LLM tokens + TTS characters from an autonomous voicebot talk duration.
-// Heuristic: ~150 wpm ≈ 12.5 chars/sec; ~50% customer / 50% bot talk time.
-// Input tokens approximate cumulative context (history re-sent each turn) + system/KB overhead.
+// Estimate LLM tokens + TTS characters from the autonomous voicebot talk time per call.
+// Speech ≈ 150 wpm ≈ 12.5 chars/sec; talk time split ~50% customer / 50% bot.
+// Input tokens per call = per-turn (system prompt + KB grounding) overhead + the running
+// conversation transcript that is re-sent on every turn (so it grows with the number of turns).
 function guessTokens(sec, charsPerToken){
   const cps=12.5, cpt=charsPerToken||4;
-  const custSec=sec*0.5, botSec=sec*0.5;
-  const custTok=custSec*cps/cpt, botTok=botSec*cps/cpt;
+  const half=Math.max(sec,0)/2;                    // seconds of customer speech / of bot speech
+  const custTok=half*cps/cpt;                      // customer speech → tokens
+  const botTok =half*cps/cpt;                      // bot speech → output tokens
+  const turns=Math.max(1, Math.round(sec/20));     // ~1 request/response exchange per 20s
+  const overheadPerTurn=700;                       // system prompt + KB grounding, re-sent each turn
   return {
-    inTok: Math.round(custTok*3 + 800),   // conversation history + system prompt + KB grounding
+    inTok: Math.round(turns*overheadPerTurn + turns*(custTok+botTok)/2), // overhead + re-sent history (avg ½ transcript × turns)
     outTok: Math.round(botTok),
-    ttsChars: Math.round(botSec*cps)
+    ttsChars: Math.round(half*cps)
   };
 }
 function applyGuess(group){
