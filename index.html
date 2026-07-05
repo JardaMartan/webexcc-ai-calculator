@@ -165,7 +165,7 @@
         <h2 class="font-bold text-base">🧑‍💼 Agent-facing Webex AI (consumption Units)</h2>
         <span class="text-sm font-semibold" data-subtotal="subs">—</span>
       </div>
-      <p class="text-xs text-slate-500 mb-3">Agent-facing Webex AI is billed as <b>consumption Units</b> (not per seat): <b>1 Unit = 1,500 covered agent-voice minutes</b> or <b>1,000 covered digital sessions</b>, rounded up. The coverage below is <b>taken from the scenario</b> — enable <b>AI Assistant</b> and/or <b>AI QM</b> on the flow diagrams; enabling both applies the discounted <b>bundle</b> price. Choose <b>Committed</b> or <b>Overage</b> pricing in the Results panel. Coverage &amp; human AHT are set in the inputs above.</p>
+      <p class="text-xs text-slate-500 mb-3">Agent-facing Webex AI is billed as <b>consumption Units</b> (not per seat): <b>1 Unit = 1,500 covered agent-voice minutes</b> or <b>1,000 covered digital sessions</b>, rounded up. The coverage below is <b>taken from the scenario</b> — enable <b>AI Assistant</b> and/or <b>AI QM</b> on the flow diagrams; enabling both applies the discounted <b>bundle</b> price. Choose <b>Committed</b> or <b>Overage</b> pricing in the Results panel. Separate <b>AI Assistant</b> (real-time) and <b>AI QM</b> (post-interaction) coverage % are set in the inputs above.</p>
       <div class="mt-1 space-y-2" data-touchpoints="subs"></div>
     </section>
 
@@ -438,7 +438,8 @@ const INPUTS = {
   pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. The rest (100 − this) are handled automatically by AI. Drives summary + suggested-response + optimisation AI cost.' },
   // human-agent coverage (AI Assistant / AI QM Units)
   avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'coverage', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / QM digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
-  assistCoverage:{ label:'AI Assistant/QM coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions covered by AI Assistant / QM. Multiplies the covered minutes/sessions before converting to Units.' }
+  assistCoverage:{ label:'AI Assistant coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions where <b>AI Assistant</b> gives the agent real-time help <i>during</i> the live conversation (transcript, suggested answers, topic detection). Drives AI Assistant Units.' },
+  qmCoverage:{ label:'AI QM coverage %', v:100, group:'coverage', suffix:'%', info:'Share of human-handled interactions analysed by <b>AI QM</b> <i>after</i> the interaction (auto-scoring, sentiment, compliance, coaching). Auto-QM often scores 100% of interactions. Drives AI QM Units.' }
 };
 
 // Touchpoints
@@ -515,14 +516,14 @@ const TP = [
   { id:'s_agentai', channel:'subs', label:'Agent-facing Webex AI (Units)', on:true, prov:'webexBundle',
     providers:['webexBundle','webexAssistant','webexQM'],
     billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI QM</b> on the flow diagrams &mdash; both applies the discounted <b>bundle</b> price, one uses that individual product price. AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI QM provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
-    compute:(c,r,p)=>({ units:c.assistUnits, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:c.assistUnits*wxUnit(r) }) }
+    compute:(c,r,p)=>{ const units = p==='webexBundle' ? (c.assistUnits+c.qmUnits) : (p==='webexAssistant' ? c.assistUnits : c.qmUnits); return { units, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:units*wxUnit(r) }; } }
 ];
 
 /* ============================ STATE ============================ */
 // Providers the user can choose between across touchpoints (excludes the single-option
 // Webex AI Assistant / AI QM which are the only provider for their touchpoints).
 const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, baseline:null, restore:null, loadedName:null };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
@@ -578,10 +579,14 @@ function ctx(){
   c.pctEscalated   = i.pctEscalated/100;
   c.emailEscalated = i.emailVolume*(i.pctEscalated/100);
   // AI Assistant / AI QM consumption units (covered human-handled interactions)
-  c.voiceHumanMin = (i.voiceAgentMin + i.obAgentMin) * (i.assistCoverage/100);
-  c.digitalHumanSessions = c.chatEscalated * Math.ceil(i.avgAgentMsgs/10) * (i.assistCoverage/100);
+  const agentVoiceMin = i.voiceAgentMin + i.obAgentMin;
+  const agentDigitalSess = c.chatEscalated * Math.ceil(i.avgAgentMsgs/10);
+  c.voiceHumanMin = agentVoiceMin * (i.assistCoverage/100);
+  c.digitalHumanSessions = agentDigitalSess * (i.assistCoverage/100);
   c.assistUnits = Math.ceil(c.voiceHumanMin/UNIT.assistVoiceMin) + Math.ceil(c.digitalHumanSessions/UNIT.assistDigitalSess);
-  c.qmUnits = c.assistUnits; // bundled: same consumption base
+  c.qmVoiceMin = agentVoiceMin * (i.qmCoverage/100);
+  c.qmSessions = agentDigitalSess * (i.qmCoverage/100);
+  c.qmUnits = Math.ceil(c.qmVoiceMin/UNIT.assistVoiceMin) + Math.ceil(c.qmSessions/UNIT.assistDigitalSess);
   return c;
 }
 
@@ -732,12 +737,12 @@ function renderFormulas(c){
    <div>
      <div class="font-semibold mb-1">Webex agent-facing AI (Assistant / QM / Bundle) — consumption Units on human-handled interactions</div>
      <ul class="space-y-1 text-slate-600 list-disc pl-5">
-       <li>Voice — <b>1 Unit = 1,500 covered agent-min</b>: &lceil; ${n(c.voiceHumanMin)} min ÷ 1,500 &rceil; = <b>${ce(c.voiceHumanMin/1500)} Units</b></li>
-       <li>Digital — <b>1 Unit = 1,000 covered sessions</b>: &lceil; ${n(c.digitalHumanSessions)} ÷ 1,000 &rceil; = <b>${ce(c.digitalHumanSessions/1000)} Units</b></li>
-       <li>Total agent-facing Units = <b>${c.assistUnits} Units</b> — priced at your chosen coverage (Bundle / Assistant / QM) × Committed or Overage rate.</li>
+       <li>AI Assistant (real-time) — coverage ${n(c.assistCoverage)}%: voice &lceil; ${n(c.voiceHumanMin)} ÷ 1,500 &rceil; + digital &lceil; ${n(c.digitalHumanSessions)} ÷ 1,000 &rceil; = <b>${c.assistUnits} Units</b></li>
+       <li>AI QM (post-interaction) — coverage ${n(c.qmCoverage)}%: voice &lceil; ${n(c.qmVoiceMin)} ÷ 1,500 &rceil; + digital &lceil; ${n(c.qmSessions)} ÷ 1,000 &rceil; = <b>${c.qmUnits} Units</b></li>
+       <li>Billed Units — <b>Bundle</b>: Assistant + QM = <b>${c.assistUnits+c.qmUnits}</b>; <b>Assistant only</b>: ${c.assistUnits}; <b>QM only</b>: ${c.qmUnits}. × Committed / Overage rate.</li>
      </ul>
    </div>
-   <div class="text-xs text-slate-400">Covered agent-min = (escalated + transferred calls) × human AHT × coverage%. Covered sessions = escalated chats × &lceil;live-agent msgs ÷ 10&rceil; × coverage% (AI Assistant counts only the live-agent interaction). All Units are rounded up.</div>`;
+   <div class="text-xs text-slate-400">Covered agent-min = (direct + transferred agent voice minutes) × coverage%. Covered sessions = escalated chats × &lceil;live-agent msgs ÷ 10&rceil; × coverage% (counts only the live-agent interaction). <b>AI Assistant</b> and <b>AI QM</b> use their own coverage %. All Units are rounded up.</div>`;
 }
 
 /* ============================ RENDER: capability matrix ============================ */
@@ -1364,7 +1369,7 @@ const WIZ_STEPS = [
      return `<p class="text-sm text-slate-600 mb-3">Set how interactions split between automation and a live agent. Voice &amp; outbound use monthly call counts (voicebot vs live-agent); chat &amp; email use a forwarded percentage. Agent-side AI cost applies only to the live-agent / forwarded share.</p>
        ${sec.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}
        <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Live-agent chat &amp; coverage (AI Assistant / QM Units)</div>
-       <div class="grid grid-cols-2 gap-3">${wizField('avgAgentMsgs')}${wizField('assistCoverage')}</div>`; } },
+       <div class="grid grid-cols-2 gap-3">${wizField('avgAgentMsgs')}${wizField('assistCoverage')}${wizField('qmCoverage')}</div>`; } },
  { title:'Webex & Cisco-billed pricing', render:()=>{
      const ccai = wiz.providers.googleCcai ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Google CCAI — Dialogflow CX (via Cisco): Flows = scripted, Playbooks = LLM</div><div class="grid grid-cols-2 gap-3">${wizRate('googleCcai','vaFlowsVoicePerSec')}${wizRate('googleCcai','vaFlowsRequest')}${wizRate('googleCcai','vaVoicePerSec')}${wizRate('googleCcai','vaRequest')}</div>` : '';
      const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">BYOVA — Bring Your Own Virtual Agent (A-FLEX-BYO): 1 Unit = 2,000 voice minutes</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','commit')}${wizRate('byova','overage')}</div>` : '';
