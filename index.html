@@ -241,6 +241,10 @@
           <div id="compareBox" class="mt-3 hidden">
             <div class="text-xs font-semibold text-slate-700 mb-1">Change by channel <span class="text-slate-400 font-normal">(current − baseline)</span></div>
             <div style="height:150px"><canvas id="compareChart"></canvas></div>
+            <div id="waterfallWrap" class="mt-3">
+              <div class="text-xs font-semibold text-slate-700 mb-1">How each action contributes <span class="text-slate-400 font-normal">(cumulative to net change)</span></div>
+              <div id="waterfallBox" style="height:180px"><canvas id="waterfallChart"></canvas></div>
+            </div>
             <div class="text-xs font-semibold text-slate-700 mt-3 mb-1">What changed</div>
             <div id="compareRows" class="space-y-1 text-xs"></div>
           </div>
@@ -871,6 +875,7 @@ document.getElementById('mToggle').addEventListener('change',e=>{ if(modalTp){ s
 /* ============================ UPDATE ============================ */
 let chart;
 let compareChart=null;
+let waterfallChart=null;
 function update(){
   const {rows,byCh,total,unitTotals,c}=calc();
   // per-touchpoint costs / units
@@ -968,6 +973,7 @@ function renderCompare(rows,byCh,total){
     if(bi) bi.textContent='';
     if(fz) fz.textContent='📌 Freeze baseline';
     if(compareChart){ compareChart.destroy(); compareChart=null; }
+    if(waterfallChart){ waterfallChart.destroy(); waterfallChart=null; }
     return;
   }
   if(cl) cl.classList.remove('hidden');
@@ -996,17 +1002,41 @@ function renderCompare(rows,byCh,total){
         scales:{ x:{ grid:{color:'#eef1f5'}, ticks:{ callback:v=>fmt(v) } }, y:{ grid:{display:false} } } }
     });
   }
-  // ranked list of touchpoints that changed
+  // ranked list + granular contributions of touchpoints that changed
   const curById={}; rows.forEach(r=>{ curById[r.id]=r; });
   const ids=new Set([...Object.keys(base.byId), ...rows.map(r=>r.id)]);
-  const changes=[...ids].map(id=>{ const b=base.byId[id], cr=curById[id]; const bc=b?b.cost:0, cc=cr?cr.cost:0;
-    return { lbl:(cr&&cr.label)||(b&&b.label)||id, prov:(cr&&cr.prov)||(b&&b.prov)||'', ch:(cr&&cr.channel)||(b&&b.channel), bc, cc, d:cc-bc }; })
-    .filter(x=>Math.abs(x.d)>=0.5).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
-  const cr=document.getElementById('compareRows');
-  if(cr) cr.innerHTML = changes.length ? changes.map(x=>
+  const all=[...ids].map(id=>{ const b=base.byId[id], cu=curById[id]; const bc=b?b.cost:0, cc=cu?cu.cost:0;
+    return { lbl:(cu&&cu.label)||(b&&b.label)||id, prov:(cu&&cu.prov)||(b&&b.prov)||'', ch:(cu&&cu.channel)||(b&&b.channel), bc, cc, d:cc-bc }; })
+    .filter(x=>Math.abs(x.d)>1e-6).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
+  const changes=all.filter(x=>Math.abs(x.d)>=0.5);
+  const crEl=document.getElementById('compareRows');
+  if(crEl) crEl.innerHTML = changes.length ? changes.map(x=>
     `<div class="flex justify-between gap-2"><span class="flex items-center gap-1.5 min-w-0"><span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${CH_COLORS[x.ch]||'#94a3b8'}"></span><span class="truncate">${x.lbl} <span class="text-slate-400">· ${x.prov}</span></span></span>`+
     `<span class="shrink-0 tabular-nums ${x.d<0?'text-emerald-600':'text-red-600'}">${x.d<0?'▼':'▲'} ${fmt(Math.abs(x.d))} <span class="text-slate-400">(${fmt(x.bc)}→${fmt(x.cc)})</span></span></div>`
   ).join('') : '<div class="text-slate-400">No line-item changes yet — adjust an input or provider.</div>';
+  // contribution waterfall (each action steps the cumulative net change)
+  const wrap=document.getElementById('waterfallWrap'), wbox=document.getElementById('waterfallBox');
+  if(!all.length){ if(wrap) wrap.classList.add('hidden'); if(waterfallChart){ waterfallChart.destroy(); waterfallChart=null; } }
+  else {
+    if(wrap) wrap.classList.remove('hidden');
+    let items=all;
+    if(all.length>8){ const top=all.slice(0,7), rest=all.slice(7); items=[...top, {lbl:'Other ('+rest.length+')', prov:'', ch:null, d:rest.reduce((s,x)=>s+x.d,0)}]; }
+    const wl=[...items.map(x=>x.lbl), 'Net change'], wd=[], wc=[];
+    let run=0;
+    items.forEach(x=>{ const s=run; run+=x.d; wd.push([s,run]); wc.push(x.d>0?'#ef4444':'#00cf64'); });
+    wd.push([0, run]); wc.push(run>0?'#b91c1c':'#047857');
+    if(wbox) wbox.style.height=Math.max(120, wl.length*30)+'px';
+    if(waterfallChart){ waterfallChart.data.labels=wl; waterfallChart.data.datasets[0].data=wd; waterfallChart.data.datasets[0].backgroundColor=wc; waterfallChart.resize(); waterfallChart.update(); }
+    else {
+      waterfallChart=new Chart(document.getElementById('waterfallChart'),{
+        type:'bar',
+        data:{ labels:wl, datasets:[{ data:wd, backgroundColor:wc, borderWidth:0, barThickness:'flex', maxBarThickness:20 }] },
+        options:{ indexAxis:'y', maintainAspectRatio:false, animation:{duration:250}, plugins:{ legend:{display:false},
+          tooltip:{ callbacks:{ label:it=>{ const a=it.raw, dv=a[1]-a[0]; return it.label==='Net change' ? 'Net '+(a[1]>=0?'+':'−')+fmt(Math.abs(a[1])) : (dv>=0?'+':'−')+fmt(Math.abs(dv)); } } } },
+          scales:{ x:{ grid:{color:'#eef1f5'}, ticks:{ callback:v=>fmt(v) } }, y:{ grid:{display:false}, ticks:{ font:{size:10} } } } }
+      });
+    }
+  }
 }
 
 // Render a validation list (array of {level,msg}) as coloured notice rows.
