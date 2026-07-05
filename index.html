@@ -422,7 +422,8 @@ const INPUTS = {
   // chat
   chatVolume:{ label:'Chats / month', v:15000, group:'chat', info:'Total digital/chat interactions per month across all channels (web, app, WhatsApp, Apple, RCS, SMS).' },
   chatFwd:{ label:'% forwarded to agent', v:55, group:'chat', suffix:'%', info:'Share of chats forwarded to a human agent (the rest are self-served by the bot). Drives AI Assistant / Quality Management usage and matches the flow diagram.' },
-  avgCustomerMsgs:{ label:'Customer msgs / chat', v:10, group:'chat', info:'Average customer-side messages per chat handled by the bot. 1 Webex AI Agent digital session = 10 customer messages (agent/Webex messages are not counted). Keep it a multiple of 10 to optimise Unit consumption.' },
+  avgCustomerMsgs:{ label:'Chat msgs with chatbot', v:10, group:'chat', info:'Average customer-side messages exchanged with the chatbot per chat. 1 Webex AI Agent digital session = 10 customer messages (agent/Webex messages are not counted). Keep it a multiple of 10 to optimise Unit consumption.' },
+  avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'chat', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / Quality Management digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
   chatAutoMix:{ label:'Autonomous digital %', v:35, group:'chat', suffix:'%', info:'Share of digital sessions handled by the autonomous (LLM) bot vs the scripted (flow) bot. Splits sessions between the two bot Unit rates.' },
   tokensPerMsg:{ label:'Tokens / message', v:40, group:'chat', info:'Average tokens per chat message, for token-priced 3rd-party autonomous chatbots. Ignored for Webex/CCAI.' },
   chatAssistTok:{ label:'Agent KB-chat tok / chat', v:1000, group:'chat', info:'Tokens per escalated chat for the optional 3rd-party agent KB-chat.' },
@@ -437,7 +438,6 @@ const INPUTS = {
   mbPerPage:{ label:'MB per analysed page', v:0.5, group:'email', step:0.1, info:'How many MB correspond to one analysed page/image. Pages = max(1, avg size MB ÷ this). Each page is charged as one vision image.' },
   pctEscalated:{ label:'% forwarded to agent', v:45, group:'email', suffix:'%', info:'Share of emails forwarded to a human agent. The rest (100 − this) are handled automatically by AI. Drives summary + suggested-response + optimisation AI cost.' },
   // human-agent coverage (AI Assistant / AI Quality Management Units)
-  avgAgentMsgs:{ label:'Chat msgs with live agent', v:10, group:'coverage', info:'Customer messages during the live-agent portion of an escalated chat. AI Assistant / Quality Management digital sessions are based only on this live-agent interaction (1 session = 10 messages), not the bot conversation.' },
   assistCoverage:{ label:'AI Assistant coverage %', v:90, group:'coverage', suffix:'%', info:'Share of human-handled interactions where <b>AI Assistant</b> gives the agent real-time help <i>during</i> the live conversation (transcript, suggested answers, topic detection). Drives AI Assistant Units.' },
   qmCoverage:{ label:'AI Quality Management coverage %', v:100, group:'coverage', suffix:'%', info:'Share of human-handled interactions analysed by <b>AI Quality Management</b> <i>after</i> the interaction (auto-scoring, sentiment, compliance, coaching). Automated scoring often covers 100% of interactions. Drives AI Quality Management Units.' }
 };
@@ -1361,7 +1361,7 @@ const WIZ_STEPS = [
  { title:'Monthly volumes', render:()=>{ const f=[];
      if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceBotCalls','voiceBotMin','voiceBotAutoPct','voiceAgentCalls','voiceAgentMin'].map(wizField).join('')+'</div>');
      if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obDirectCalls','obBotCalls','obBotTransferPct','obBotMin','obBotAutoPct','obAgentMin'].map(wizField).join('')+'</div>');
-     if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
+     if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','avgAgentMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
      if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
        +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
      return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
@@ -1372,8 +1372,8 @@ const WIZ_STEPS = [
      if(wiz.channels.email) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-2 gap-3">'+wizField('pctEscalated','Email — % forwarded to agent')+'</div>');
      return `<p class="text-sm text-slate-600 mb-3">Set how interactions split between automation and a live agent. Voice &amp; outbound use monthly call counts (voicebot vs live-agent); chat &amp; email use a forwarded percentage. Agent-side AI cost applies only to the live-agent / forwarded share.</p>
        ${sec.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}
-       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">Live-agent chat &amp; coverage (AI Assistant / Quality Management Units)</div>
-       <div class="grid grid-cols-2 gap-3">${wizField('avgAgentMsgs')}${wizField('assistCoverage')}${wizField('qmCoverage')}</div>`; } },
+       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">AI Assistant / Quality Management coverage</div>
+       <div class="grid grid-cols-2 gap-3">${wizField('assistCoverage')}${wizField('qmCoverage')}</div>`; } },
  { title:'Webex & Cisco-billed pricing', render:()=>{
      const ccai = wiz.providers.googleCcai ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Google CCAI — Dialogflow CX (via Cisco): Flows = scripted, Playbooks = LLM</div><div class="grid grid-cols-2 gap-3">${wizRate('googleCcai','vaFlowsVoicePerSec')}${wizRate('googleCcai','vaFlowsRequest')}${wizRate('googleCcai','vaVoicePerSec')}${wizRate('googleCcai','vaRequest')}</div>` : '';
      const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">BYOVA — Bring Your Own Virtual Agent (A-FLEX-BYO): 1 Unit = 2,000 voice minutes</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','commit')}${wizRate('byova','overage')}</div>` : '';
