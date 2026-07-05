@@ -208,7 +208,10 @@
     <section class="card p-5" data-channel="voice">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">🎙️ Inbound voice flow</h2>
-        <span class="text-sm font-semibold" data-subtotal="voice">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="voice">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="voice"></div>
+        </div>
       </div>
       <div id="diagram-voice" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="voice"></div>
@@ -218,7 +221,10 @@
     <section class="card p-5" data-channel="outbound">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">📢 Outbound voice campaign <span class="text-xs font-normal text-slate-500">(mostly direct-to-agent · optional voicebot)</span></h2>
-        <span class="text-sm font-semibold" data-subtotal="outbound">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="outbound">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="outbound"></div>
+        </div>
       </div>
       <div id="diagram-outbound" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="outbound"></div>
@@ -228,7 +234,10 @@
     <section class="card p-5" data-channel="chat">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">💬 Digital / chat flow <span class="text-xs font-normal text-slate-500">(web · in-app · WhatsApp · Apple · RCS · SMS)</span></h2>
-        <span class="text-sm font-semibold" data-subtotal="chat">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="chat">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="chat"></div>
+        </div>
       </div>
       <div id="diagram-chat" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="chat"></div>
@@ -238,7 +247,10 @@
     <section class="card p-5" data-channel="email">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">✉️ Email flow</h2>
-        <span class="text-sm font-semibold" data-subtotal="email">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="email">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="email"></div>
+        </div>
       </div>
       <div id="diagram-email" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="email"></div>
@@ -619,6 +631,8 @@ const tok = (i,o,r)=> (i*(r.inPer1M||0)+o*(r.outPer1M||0))/1e6;
 // Active Webex Unit price from a {commit, overage} rate object, per the commit/overage toggle.
 const wxUnit = r => (state.commitMode==='overage' ? r.overage : r.commit) || 0;
 const fmt = n => '$'+ (n>=1000? n.toLocaleString('en-US',{maximumFractionDigits:0}) : n.toLocaleString('en-US',{maximumFractionDigits:2}));
+// High-resolution currency: 5 significant digits so small per-interaction costs aren't rounded to $0.00.
+const fmt5 = n => { n=+n||0; if(n===0) return '$0'; return '$'+n.toLocaleString('en-US',{maximumSignificantDigits:5}); };
 const CH_NAMES = { voice:'Inbound voice', outbound:'Outbound', chat:'Chat', email:'Email', subs:'AI Assistant / Quality Management' };
 const CH_COLORS = { voice:'#00cf64', outbound:'#14b8a6', chat:'#2f6fed', email:'#f59e0b', subs:'#8b5cf6' };
 const CHANNELS = ['voice','outbound','chat','email','subs'];
@@ -1022,9 +1036,13 @@ function update(){
       : fmt(cost)+'/mo';
     el.className='ml-auto text-sm font-semibold';
   });
-  // subtotals
+  // subtotals + per-interaction (per-channel; the agent-facing Assistant/QM 'subs' panel is excluded)
+  const peDenom={voice:c.voiceCalls,outbound:c.obCalls,chat:c.chatVolume,email:c.emailVolume};
+  const peUnit={voice:'call',outbound:'call',chat:'chat',email:'email'};
   CHANNELS.forEach(ch=>{
     document.querySelector(`[data-subtotal="${ch}"]`).textContent=fmt(byCh[ch])+' / mo';
+    const pe=document.querySelector(`[data-perint="${ch}"]`);
+    if(pe) pe.textContent = fmt5(byCh[ch]/Math.max(peDenom[ch]||0,1))+' / '+peUnit[ch];
   });
   // unit headline totals
   document.getElementById('uAgent').textContent=unitTotals.agent;
@@ -1048,11 +1066,43 @@ function update(){
     `<div class="flex justify-between font-medium"><span class="flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full" style="background:${g.color}"></span>${g.name}</span><b>${fmt(g.cost)}</b></div>`+
     g.parts.map(p=>`<div class="flex justify-between text-xs text-slate-500 pl-6"><span class="flex items-center gap-2"><span class="inline-block w-2 h-2 rounded-full" style="background:${p.color}"></span>${p.label} <span class="text-slate-400">· ${p.prov}</span></span><span>${fmt(p.cost)}</span></div>`).join('')
   ).join('') || '<div class="text-sm text-slate-400">No costs yet.</div>';
-  // per interaction
+  // per interaction — 5-significant-digit resolution so small costs aren't rounded to $0.00
   const totalInt=c.voiceCalls+c.obCalls+c.chatVolume+c.emailVolume;
+  const denom=Math.max(totalInt,1);
+  // split cost by role: automated handling (per interaction scenario), agent assistance, quality management
+  const cat={assist:0,qm:0};
+  const autoByCh={voice:0,outbound:0,chat:0,email:0};
+  // Agent-assistance touchpoints = the dedicated 3rd-party "agent KB chat" aids. The forwarded-email
+  // AI actions (summary / suggested response / desktop optimise) are part of email automation, not
+  // agent assistance, so they fall into Automated handling · Email below.
+  const ASSIST_TPS=['v_assist','o_assist','c_assist'];
+  rows.forEach(r=>{
+    if(r.id==='s_agentai'){
+      const p=state.prov['s_agentai'];
+      if(p==='webexAssistant') cat.assist+=r.cost;
+      else if(p==='webexQM') cat.qm+=r.cost;
+      else { cat.assist+=r.cost/2; cat.qm+=r.cost/2; } // bundle = single meter covering both; split evenly
+    } else if(ASSIST_TPS.includes(r.id)) cat.assist+=r.cost;
+    else if(r.channel in autoByCh) autoByCh[r.channel]+=r.cost;
+  });
+  const box=(label,color,val,d,unit)=>`<div class="rounded-lg border border-slate-200 px-2.5 py-1.5">
+    <div class="flex items-center gap-1.5 text-[11px] text-slate-500"><span class="inline-block w-2 h-2 rounded-full" style="background:${color}"></span>${label}</div>
+    <div class="text-slate-700 font-semibold leading-tight">${fmt5(val/Math.max(d,1))}<span class="text-[10px] text-slate-400 font-normal"> / ${unit}</span></div>
+    <div class="text-[10px] text-slate-400">${fmt(val)} / mo</div>
+  </div>`;
+  const chLabel={voice:'Inbound voice',outbound:'Outbound',chat:'Chat',email:'Email'};
+  const chUnit={voice:'call',outbound:'call',chat:'chat',email:'email'};
+  const chDenom={voice:c.voiceCalls,outbound:c.obCalls,chat:c.chatVolume,email:c.emailVolume};
+  const autoBoxes=['voice','outbound','chat','email']
+    .filter(ch=>autoByCh[ch]>1e-9)
+    .map(ch=>box(chLabel[ch],CH_COLORS[ch],autoByCh[ch],chDenom[ch],chUnit[ch])).join('');
   document.getElementById('perInteraction').innerHTML=
-    `Blended cost ≈ <b>${fmt(total/Math.max(totalInt,1))}</b> / interaction · `+
-    `Inbound ${fmt(byCh.voice/Math.max(c.voiceCalls,1))} · Outbound ${fmt(byCh.outbound/Math.max(c.obCalls,1))} · Chat ${fmt(byCh.chat/Math.max(c.chatVolume,1))} · Email ${fmt(byCh.email/Math.max(c.emailVolume,1))}`;
+    `<div class="text-[11px] font-semibold text-slate-500 mb-1">Automated handling &middot; per interaction</div>`+
+    `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">${autoBoxes||'<span class="text-xs text-slate-400">none</span>'}</div>`+
+    `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">`+
+      box('Agent assistance','var(--wx)',cat.assist,denom,'interaction')+
+      box('Quality management','#8b5cf6',cat.qm,denom,'interaction')+
+    `</div>`;
   if(chart){
     chart.data.datasets[0].data=dd.outer.data; chart.data.datasets[0].backgroundColor=dd.outer.colors; chart.data.datasets[0]._labels=dd.outer.labels;
     chart.data.datasets[1].data=dd.inner.data; chart.data.datasets[1].backgroundColor=dd.inner.colors; chart.data.datasets[1]._labels=dd.inner.labels;
