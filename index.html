@@ -151,7 +151,10 @@
     <section class="card p-5" data-channel="voice">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">🎙️ Inbound voice flow</h2>
-        <span class="text-sm font-semibold" data-subtotal="voice">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="voice">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="voice"></div>
+        </div>
       </div>
       <div id="diagram-voice" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="voice"></div>
@@ -161,7 +164,10 @@
     <section class="card p-5" data-channel="outbound">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">📢 Outbound voice campaign <span class="text-xs font-normal text-slate-500">(mostly direct-to-agent · optional voicebot)</span></h2>
-        <span class="text-sm font-semibold" data-subtotal="outbound">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="outbound">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="outbound"></div>
+        </div>
       </div>
       <div id="diagram-outbound" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="outbound"></div>
@@ -171,7 +177,10 @@
     <section class="card p-5" data-channel="chat">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">💬 Digital / chat flow <span class="text-xs font-normal text-slate-500">(web · in-app · WhatsApp · Apple · RCS · SMS)</span></h2>
-        <span class="text-sm font-semibold" data-subtotal="chat">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="chat">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="chat"></div>
+        </div>
       </div>
       <div id="diagram-chat" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="chat"></div>
@@ -181,7 +190,10 @@
     <section class="card p-5" data-channel="email">
       <div class="flex items-center justify-between mb-3">
         <h2 class="font-bold text-base">✉️ Email flow</h2>
-        <span class="text-sm font-semibold" data-subtotal="email">—</span>
+        <div class="text-right leading-tight">
+          <div class="text-sm font-semibold" data-subtotal="email">—</div>
+          <div class="text-[11px] text-slate-400" data-perint="email"></div>
+        </div>
       </div>
       <div id="diagram-email" class="overflow-x-auto pb-2"></div>
       <div class="mt-4 space-y-2" data-touchpoints="email"></div>
@@ -967,9 +979,13 @@ function update(){
       : fmt(cost)+'/mo';
     el.className='ml-auto text-sm font-semibold';
   });
-  // subtotals
+  // subtotals + per-interaction (per-channel; the agent-facing Assistant/QM 'subs' panel is excluded)
+  const peDenom={voice:c.voiceCalls,outbound:c.obCalls,chat:c.chatVolume,email:c.emailVolume};
+  const peUnit={voice:'call',outbound:'call',chat:'chat',email:'email'};
   CHANNELS.forEach(ch=>{
     document.querySelector(`[data-subtotal="${ch}"]`).textContent=fmt(byCh[ch])+' / mo';
+    const pe=document.querySelector(`[data-perint="${ch}"]`);
+    if(pe) pe.textContent = fmt5(byCh[ch]/Math.max(peDenom[ch]||0,1))+' / '+peUnit[ch];
   });
   // unit headline totals
   document.getElementById('uAgent').textContent=unitTotals.agent;
