@@ -101,7 +101,7 @@
         <div class="ml-auto flex items-center gap-2">
           <button type="button" class="tool-btn" id="btnSave">↓ Save</button>
           <button type="button" class="tool-btn" id="btnLoad">↑ Load</button>
-          <button type="button" class="tool-btn" id="btnResetAll">↺ Reset all</button>
+          <button type="button" class="tool-btn" id="btnRevert" title="Revert all inputs, providers and pricing back to the last loaded file (or the starting values if nothing has been loaded).">↺ Revert changes</button>
           <input type="file" id="fileLoad" accept="application/json,.json" class="hidden">
         </div>
       </div>
@@ -523,7 +523,7 @@ const TP = [
 // Webex AI Assistant / AI QM which are the only provider for their touchpoints).
 const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
 const SCHEMA_VERSION = 11;
-const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, baseline:null };
+const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, baseline:null, restore:null, loadedName:null };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
 TP.forEach(t=>{ state.prov[t.id]=t.prov; state.on[t.id]=t.on; });
@@ -1238,6 +1238,8 @@ function loadData(file){
       state.baseline = (d.baseline && typeof d.baseline.total==='number' && d.baseline.byCh && d.baseline.byId) ? d.baseline : null;
       applyAgentAi();
       renderInputs(); renderTouchpoints(); renderRates(); update();
+      state.loadedName = (file && file.name) || 'loaded scenario';
+      captureRestore();
       // Schema migration: inputs the current version expects but the file did not include.
       const fileVer = d.schema || d.version || 1;
       const missing = Object.keys(INPUTS).filter(k=>!INPUTS[k].hidden && provided[k]===undefined);
@@ -1253,9 +1255,37 @@ function openMigrate(keys, fileVer){
   const m=document.getElementById('migrateModal'); m.classList.remove('hidden'); m.classList.add('flex');
 }
 function closeMigrate(){ const m=document.getElementById('migrateModal'); m.classList.add('hidden'); m.classList.remove('flex'); renderInputs(); update(); }
-function resetAll(){
-  Object.keys(INPUTS).forEach(k=> state.inp[k]=INPUTS[k].v);
-  renderInputs(); update();
+function captureRestore(){
+  state.restore = {
+    inp: JSON.parse(JSON.stringify(state.inp)),
+    rates: JSON.parse(JSON.stringify(state.rates)),
+    prov: {...state.prov},
+    on: {...state.on},
+    allowedProviders: [...state.allowedProviders],
+    commitMode: state.commitMode,
+    needAssistant: state.needAssistant,
+    needQm: state.needQm
+  };
+  const b=document.getElementById('btnRevert');
+  if(b){
+    b.textContent = state.loadedName ? '↺ Revert to loaded' : '↺ Revert changes';
+    b.title = state.loadedName
+      ? 'Revert all inputs, providers and pricing back to “'+state.loadedName+'” (the last loaded file).'
+      : 'Revert all inputs, providers and pricing back to the starting values (nothing loaded yet).';
+  }
+}
+function revertToLoaded(){
+  const r=state.restore; if(!r) return;
+  state.inp = JSON.parse(JSON.stringify(r.inp));
+  state.rates = JSON.parse(JSON.stringify(r.rates));
+  state.prov = {...r.prov};
+  state.on = {...r.on};
+  state.allowedProviders = [...r.allowedProviders];
+  state.commitMode = r.commitMode;
+  state.needAssistant = r.needAssistant;
+  state.needQm = r.needQm;
+  applyAgentAi();
+  renderInputs(); renderTouchpoints(); renderRates(); update();
 }
 
 /* ============================ WIZARD ============================ */
@@ -1401,7 +1431,7 @@ document.addEventListener('click',e=>{
   if(e.target.id==='btnFreeze'){ freezeBaseline(); return; }
   if(e.target.id==='btnClearBase'){ clearBaseline(); return; }
   if(e.target.id==='btnLoad'){ document.getElementById('fileLoad').click(); return; }
-  if(e.target.id==='btnResetAll'){ resetAll(); return; }
+  if(e.target.id==='btnRevert'){ revertToLoaded(); return; }
   const cmBtn=e.target.closest('[data-commit]');
   if(cmBtn){ state.commitMode=cmBtn.dataset.commit; update(); return; }
 });
@@ -1446,6 +1476,7 @@ renderRates();
 renderMatrix();
 renderDiagrams();
 update();
+captureRestore();
 if(!localStorage.getItem('wxCalcWizardSeen')) openWizard();
 </script>
 </body>
