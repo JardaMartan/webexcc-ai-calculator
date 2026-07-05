@@ -999,7 +999,10 @@ function update(){
   // split cost by role: automated handling (per interaction scenario), agent assistance, quality management
   const cat={assist:0,qm:0};
   const autoByCh={voice:0,outbound:0,chat:0,email:0};
-  const ASSIST_TPS=['v_assist','o_assist','c_assist','e_summary','e_suggest','e_optimize'];
+  // Agent-assistance touchpoints = the dedicated 3rd-party "agent KB chat" aids. The forwarded-email
+  // AI actions (summary / suggested response / desktop optimise) are part of email automation, not
+  // agent assistance, so they fall into Automated handling · Email below.
+  const ASSIST_TPS=['v_assist','o_assist','c_assist'];
   rows.forEach(r=>{
     if(r.id==='s_agentai'){
       const p=state.prov['s_agentai'];
@@ -1015,7 +1018,7 @@ function update(){
     <div class="text-[10px] text-slate-400">${fmt(val)} / mo</div>
   </div>`;
   const chLabel={voice:'Inbound voice',outbound:'Outbound',chat:'Chat',email:'Email'};
-  const chUnit={voice:'inbound call',outbound:'outbound call',chat:'chat',email:'email'};
+  const chUnit={voice:'call',outbound:'call',chat:'chat',email:'email'};
   const chDenom={voice:c.voiceCalls,outbound:c.obCalls,chat:c.chatVolume,email:c.emailVolume};
   const autoBoxes=['voice','outbound','chat','email']
     .filter(ch=>autoByCh[ch]>1e-9)
