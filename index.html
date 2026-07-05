@@ -996,8 +996,9 @@ function update(){
   // per interaction — 5-significant-digit resolution so small costs aren't rounded to $0.00
   const totalInt=c.voiceCalls+c.obCalls+c.chatVolume+c.emailVolume;
   const denom=Math.max(totalInt,1);
-  // split cost by role: automated handling (bots + email automation), agent assistance, quality management
-  const cat={auto:0,assist:0,qm:0};
+  // split cost by role: automated handling (per interaction scenario), agent assistance, quality management
+  const cat={assist:0,qm:0};
+  const autoByCh={voice:0,outbound:0,chat:0,email:0};
   const ASSIST_TPS=['v_assist','o_assist','c_assist','e_summary','e_suggest','e_optimize'];
   rows.forEach(r=>{
     if(r.id==='s_agentai'){
@@ -1006,22 +1007,26 @@ function update(){
       else if(p==='webexQM') cat.qm+=r.cost;
       else { cat.assist+=r.cost/2; cat.qm+=r.cost/2; } // bundle = single meter covering both; split evenly
     } else if(ASSIST_TPS.includes(r.id)) cat.assist+=r.cost;
-    else cat.auto+=r.cost;
+    else if(r.channel in autoByCh) autoByCh[r.channel]+=r.cost;
   });
-  const catBox=(label,color,val)=>`<div class="rounded-lg border border-slate-200 px-2.5 py-1.5">
+  const box=(label,color,val,d,unit)=>`<div class="rounded-lg border border-slate-200 px-2.5 py-1.5">
     <div class="flex items-center gap-1.5 text-[11px] text-slate-500"><span class="inline-block w-2 h-2 rounded-full" style="background:${color}"></span>${label}</div>
-    <div class="text-slate-700 font-semibold leading-tight">${fmt5(val/denom)}<span class="text-[10px] text-slate-400 font-normal"> /interaction</span></div>
+    <div class="text-slate-700 font-semibold leading-tight">${fmt5(val/Math.max(d,1))}<span class="text-[10px] text-slate-400 font-normal"> / ${unit}</span></div>
     <div class="text-[10px] text-slate-400">${fmt(val)} / mo</div>
   </div>`;
+  const chLabel={voice:'Inbound voice',outbound:'Outbound',chat:'Chat',email:'Email'};
+  const chUnit={voice:'inbound call',outbound:'outbound call',chat:'chat',email:'email'};
+  const chDenom={voice:c.voiceCalls,outbound:c.obCalls,chat:c.chatVolume,email:c.emailVolume};
+  const autoBoxes=['voice','outbound','chat','email']
+    .filter(ch=>autoByCh[ch]>1e-9)
+    .map(ch=>box(chLabel[ch],CH_COLORS[ch],autoByCh[ch],chDenom[ch],chUnit[ch])).join('');
   document.getElementById('perInteraction').innerHTML=
-    `<div class="mb-2">Blended cost &asymp; <b class="text-slate-700">${fmt5(total/denom)}</b> / interaction `+
-    `<span class="text-slate-400">(${Math.round(totalInt).toLocaleString('en-US')} interactions / mo)</span></div>`+
-    `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">`+
-      catBox('Automated handling','#0ea5e9',cat.auto)+
-      catBox('Agent assistance','var(--wx)',cat.assist)+
-      catBox('Quality management','#8b5cf6',cat.qm)+
-    `</div>`+
-    `<div class="text-slate-500">By channel &middot; Inbound ${fmt5(byCh.voice/Math.max(c.voiceCalls,1))} &middot; Outbound ${fmt5(byCh.outbound/Math.max(c.obCalls,1))} &middot; Chat ${fmt5(byCh.chat/Math.max(c.chatVolume,1))} &middot; Email ${fmt5(byCh.email/Math.max(c.emailVolume,1))}</div>`;
+    `<div class="text-[11px] font-semibold text-slate-500 mb-1">Automated handling &middot; per interaction</div>`+
+    `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">${autoBoxes||'<span class="text-xs text-slate-400">none</span>'}</div>`+
+    `<div class="grid grid-cols-1 sm:grid-cols-2 gap-2">`+
+      box('Agent assistance','var(--wx)',cat.assist,denom,'interaction')+
+      box('Quality management','#8b5cf6',cat.qm,denom,'interaction')+
+    `</div>`;
   if(chart){
     chart.data.datasets[0].data=dd.outer.data; chart.data.datasets[0].backgroundColor=dd.outer.colors; chart.data.datasets[0]._labels=dd.outer.labels;
     chart.data.datasets[1].data=dd.inner.data; chart.data.datasets[1].backgroundColor=dd.inner.colors; chart.data.datasets[1]._labels=dd.inner.labels;
