@@ -119,6 +119,29 @@
       </div>
     </div>
 
+    <!-- Settings: available AI providers -->
+    <section class="card p-5">
+      <details>
+        <summary class="font-bold text-base flex items-center justify-between">
+          <span>⚙ Settings — available AI providers</span>
+          <span class="pill">saved with scenario</span>
+        </summary>
+        <p class="text-xs text-slate-500 mt-2 mb-3">Choose which AI providers appear in the touchpoint dropdowns below. Deselected providers are hidden everywhere (Webex-native products always remain). Optionally apply a preferred provider to every touchpoint that supports it.</p>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-sm font-semibold">Available AI providers</span>
+          <label class="flex items-center gap-1 text-xs text-slate-500"><input type="checkbox" id="setAllProv"> Select all</label>
+        </div>
+        <div id="setProviders" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+        <div class="mt-4 flex flex-wrap items-end gap-2">
+          <label class="text-xs font-medium text-slate-600 flex flex-col gap-1">
+            <span>Preferred provider</span>
+            <select id="setPreferred" class="text-sm"></select>
+          </label>
+          <button type="button" class="tool-btn" id="setApplyPref">Apply to all supported touchpoints</button>
+        </div>
+      </details>
+    </section>
+
     <!-- Voice -->
     <section class="card p-5" data-channel="voice">
       <div class="flex items-center justify-between mb-3">
@@ -669,6 +692,38 @@ function renderTouchpoints(){
     if(ch==='subs'){ el.innerHTML = agentAiSelectorHtml(); return; }
     el.innerHTML = TP.filter(t=>t.channel===ch).map(tpRow).join('');
   });
+  renderSettings();
+}
+
+/* ============================ SETTINGS: available AI providers ============================ */
+function renderSettings(){
+  const box=document.getElementById('setProviders'); if(!box) return;
+  box.innerHTML = SELECTABLE_PROVIDERS.map(id=>{ const on=state.allowedProviders.includes(id);
+    return `<label class="flex items-center gap-2 p-2 rounded-lg border ${on?'border-[color:var(--wx)] bg-[#eef7f0]':'border-slate-200'} text-sm"><input type="checkbox" data-setprov="${id}" ${on?'checked':''}> ${PROVIDERS[id].name}</label>`;
+  }).join('');
+  const all=document.getElementById('setAllProv'); if(all) all.checked=SELECTABLE_PROVIDERS.every(id=>state.allowedProviders.includes(id));
+  const pref=document.getElementById('setPreferred'); if(pref){ const avail=SELECTABLE_PROVIDERS.filter(id=>state.allowedProviders.includes(id)); const list=avail.length?avail:SELECTABLE_PROVIDERS; const cur=pref.value; pref.innerHTML=list.map(id=>`<option value="${id}">${PROVIDERS[id].name}</option>`).join(''); if(list.includes(cur)) pref.value=cur; }
+}
+// If a provider becomes unavailable, move touchpoints using it to an allowed option.
+function reconcileTouchpointProviders(){
+  TP.forEach(t=>{ const allowed=t.providers.filter(p=> p.startsWith('webex') || state.allowedProviders.includes(p));
+    if(allowed.length && !allowed.includes(state.prov[t.id])) state.prov[t.id]=allowed[0]; });
+}
+function setProviderAvailability(id,on){
+  const set=new Set(state.allowedProviders);
+  if(on) set.add(id); else set.delete(id);
+  state.allowedProviders=SELECTABLE_PROVIDERS.filter(p=>set.has(p));
+  reconcileTouchpointProviders(); renderTouchpoints(); renderSettings(); update();
+}
+function setAllProviders(on){
+  state.allowedProviders = on ? [...SELECTABLE_PROVIDERS] : [];
+  reconcileTouchpointProviders(); renderTouchpoints(); renderSettings(); update();
+}
+function applyPreferredAll(pref){
+  if(!pref) return;
+  TP.forEach(t=>{ const allowed=t.providers.filter(p=> p.startsWith('webex') || state.allowedProviders.includes(p));
+    if(allowed.includes(pref)) state.prov[t.id]=pref; });
+  renderTouchpoints(); update();
 }
 
 // Agent-facing coverage: two feature checkboxes. Both -> bundle price; one -> that product's price.
@@ -1419,6 +1474,8 @@ document.addEventListener('change',e=>{
   else if(el.dataset.on!==undefined){ state.on[el.dataset.on]=el.checked; update(); }
   else if(el.dataset.wizCh!==undefined){ wiz.channels[el.dataset.wizCh]=el.checked; }
   else if(el.dataset.wizProv!==undefined){ wiz.providers[el.dataset.wizProv]=el.checked; if(!wiz.providers[wiz.preferred]){ const s=SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]); wiz.preferred=s[0]||''; } wizRender(); }
+  else if(el.dataset.setprov!==undefined){ setProviderAvailability(el.dataset.setprov, el.checked); }
+  else if(el.id==='setAllProv'){ setAllProviders(el.checked); }
   else if(el.hasAttribute && el.hasAttribute('data-wiz-all')){ SELECTABLE_PROVIDERS.forEach(id=> wiz.providers[id]=el.checked); if(!wiz.providers[wiz.preferred]){ const s=SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]); wiz.preferred=s[0]||''; } wizRender(); }
   else if(el.hasAttribute && el.hasAttribute('data-wiz-preferred')){ wiz.preferred=el.value; }
   else if(el.id==='fileLoad' && el.files[0]){ loadData(el.files[0]); el.value=''; }
@@ -1427,6 +1484,7 @@ document.addEventListener('click',e=>{
   const feat=e.target.closest('[data-feat]');
   if(feat){ if(feat.dataset.feat==='assistant') state.needAssistant=!state.needAssistant; else state.needQm=!state.needQm; applyAgentAi(); renderTouchpoints(); update(); return; }
   if(e.target.id==='btnWizard'){ openWizard(); return; }
+  if(e.target.id==='setApplyPref'){ applyPreferredAll(document.getElementById('setPreferred').value); return; }
   if(e.target.id==='wizNext'){ wizNext(); return; }
   if(e.target.id==='wizBack'){ wizBack(); return; }
   if(e.target.id==='wizSkip'){ closeWizard(); return; }
