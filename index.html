@@ -515,8 +515,8 @@ const TP = [
   // --- WEBEX AGENT-FACING AI (consumption Units) — pick Bundle / AI Assistant / AI Quality Management ---
   { id:'s_agentai', channel:'subs', label:'Agent-facing Webex AI (Units)', on:true, prov:'webexBundle',
     providers:['webexBundle','webexAssistant','webexQM'],
-    billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI Quality Management</b> on the flow diagrams &mdash; both applies the discounted <b>bundle</b> price, one uses that individual product price. AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI Quality Management provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
-    compute:(c,r,p)=>{ const units = p==='webexBundle' ? (c.assistUnits+c.qmUnits) : (p==='webexAssistant' ? c.assistUnits : c.qmUnits); return { units, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:units*wxUnit(r) }; } }
+    billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI Quality Management</b> on the flow diagrams &mdash; enabling both applies the discounted <b>bundle</b> price, which is a <b>single meter covering both products</b> per interaction (one Unit consumed, not two), at the wider of the two coverage %. A single product bills only its own Units. AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI Quality Management provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
+    compute:(c,r,p)=>{ const units = p==='webexBundle' ? c.bundleUnits : (p==='webexAssistant' ? c.assistUnits : c.qmUnits); return { units, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:units*wxUnit(r) }; } }
 ];
 
 /* ============================ STATE ============================ */
@@ -587,6 +587,10 @@ function ctx(){
   c.qmVoiceMin = agentVoiceMin * (i.qmCoverage/100);
   c.qmSessions = agentDigitalSess * (i.qmCoverage/100);
   c.qmUnits = Math.ceil(c.qmVoiceMin/UNIT.assistVoiceMin) + Math.ceil(c.qmSessions/UNIT.assistDigitalSess);
+  // Bundle = one meter covering BOTH products on each interaction (not the sum of the two).
+  // A unit is consumed for any interaction touched by Assistant and/or QM → union = the wider coverage.
+  const maxCov = Math.max(i.assistCoverage, i.qmCoverage);
+  c.bundleUnits = Math.ceil((agentVoiceMin*(maxCov/100))/UNIT.assistVoiceMin) + Math.ceil((agentDigitalSess*(maxCov/100))/UNIT.assistDigitalSess);
   return c;
 }
 
@@ -739,7 +743,7 @@ function renderFormulas(c){
      <ul class="space-y-1 text-slate-600 list-disc pl-5">
        <li>AI Assistant (real-time) — coverage ${n(c.assistCoverage)}%: voice &lceil; ${n(c.voiceHumanMin)} ÷ 1,500 &rceil; + digital &lceil; ${n(c.digitalHumanSessions)} ÷ 1,000 &rceil; = <b>${c.assistUnits} Units</b></li>
        <li>AI Quality Management (post-interaction) — coverage ${n(c.qmCoverage)}%: voice &lceil; ${n(c.qmVoiceMin)} ÷ 1,500 &rceil; + digital &lceil; ${n(c.qmSessions)} ÷ 1,000 &rceil; = <b>${c.qmUnits} Units</b></li>
-       <li>Billed Units — <b>Bundle</b>: Assistant + Quality Management = <b>${c.assistUnits+c.qmUnits}</b>; <b>Assistant only</b>: ${c.assistUnits}; <b>Quality Management only</b>: ${c.qmUnits}. × Committed / Overage rate.</li>
+       <li>Billed Units — <b>Bundle</b> (one meter covers both, at max coverage ${n(Math.max(c.assistCoverage,c.qmCoverage))}%): <b>${c.bundleUnits}</b> Units; <b>Assistant only</b>: ${c.assistUnits}; <b>Quality Management only</b>: ${c.qmUnits}. × Committed / Overage rate.</li>
      </ul>
    </div>
    <div class="text-xs text-slate-400">Covered agent-min = (direct + transferred agent voice minutes) × coverage%. Covered sessions = escalated chats × &lceil;live-agent msgs ÷ 10&rceil; × coverage% (counts only the live-agent interaction). <b>AI Assistant</b> and <b>AI Quality Management</b> use their own coverage %. All Units are rounded up.</div>`;
