@@ -1009,11 +1009,16 @@ function renderCompare(rows,byCh,total){
     return { lbl:(cu&&cu.label)||(b&&b.label)||id, prov:(cu&&cu.prov)||(b&&b.prov)||'', ch:(cu&&cu.channel)||(b&&b.channel), bc, cc, d:cc-bc }; })
     .filter(x=>Math.abs(x.d)>1e-6).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
   const changes=all.filter(x=>Math.abs(x.d)>=0.5);
+  const netD=total-base.total, netPct=base.total? netD/base.total*100:0;
+  const pctOf=d=> base.total ? d/base.total*100 : 0;
+  const sgn=v=> v>0?'+':v<0?'−':'';
   const crEl=document.getElementById('compareRows');
-  if(crEl) crEl.innerHTML = changes.length ? changes.map(x=>
-    `<div class="flex justify-between gap-2"><span class="flex items-center gap-1.5 min-w-0"><span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${CH_COLORS[x.ch]||'#94a3b8'}"></span><span class="truncate">${x.lbl} <span class="text-slate-400">· ${x.prov}</span></span></span>`+
-    `<span class="shrink-0 tabular-nums ${x.d<0?'text-emerald-600':'text-red-600'}">${x.d<0?'▼':'▲'} ${fmt(Math.abs(x.d))} <span class="text-slate-400">(${fmt(x.bc)}→${fmt(x.cc)})</span></span></div>`
-  ).join('') : '<div class="text-slate-400">No line-item changes yet — adjust an input or provider.</div>';
+  if(crEl) crEl.innerHTML =
+    `<div class="flex justify-between gap-2 font-semibold ${netD<0?'text-emerald-700':netD>0?'text-red-700':'text-slate-500'}"><span>Net change</span><span class="tabular-nums">${netD<0?'▼':netD>0?'▲':'●'} ${fmt(Math.abs(netD))} (${sgn(netD)}${Math.abs(netPct).toFixed(1)}%)</span></div>`+
+    (changes.length ? changes.map(x=>{ const p=pctOf(x.d);
+      return `<div class="flex justify-between gap-2"><span class="flex items-center gap-1.5 min-w-0"><span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${CH_COLORS[x.ch]||'#94a3b8'}"></span><span class="truncate">${x.lbl} <span class="text-slate-400">· ${x.prov}</span></span></span>`+
+      `<span class="shrink-0 tabular-nums ${x.d<0?'text-emerald-600':'text-red-600'}">${x.d<0?'▼':'▲'} ${fmt(Math.abs(x.d))} <span class="text-slate-400">· ${sgn(x.d)}${Math.abs(p).toFixed(1)}%</span></span></div>`;
+    }).join('') : '<div class="text-slate-400 mt-1">No line-item changes yet — adjust an input or provider.</div>');
   // contribution waterfall (each action steps the cumulative net change)
   const wrap=document.getElementById('waterfallWrap'), wbox=document.getElementById('waterfallBox');
   if(!all.length){ if(wrap) wrap.classList.add('hidden'); if(waterfallChart){ waterfallChart.destroy(); waterfallChart=null; } }
@@ -1032,7 +1037,7 @@ function renderCompare(rows,byCh,total){
         type:'bar',
         data:{ labels:wl, datasets:[{ data:wd, backgroundColor:wc, borderWidth:0, barThickness:'flex', maxBarThickness:20 }] },
         options:{ indexAxis:'y', maintainAspectRatio:false, animation:{duration:250}, plugins:{ legend:{display:false},
-          tooltip:{ callbacks:{ label:it=>{ const a=it.raw, dv=a[1]-a[0]; return it.label==='Net change' ? 'Net '+(a[1]>=0?'+':'−')+fmt(Math.abs(a[1])) : (dv>=0?'+':'−')+fmt(Math.abs(dv)); } } } },
+          tooltip:{ callbacks:{ label:it=>{ const a=it.raw, dv=a[1]-a[0], b0=state.baseline?state.baseline.total:0; const val=it.label==='Net change'?a[1]:dv; const p=b0? val/b0*100:0; const s=val>0?'+':val<0?'−':''; return (it.label==='Net change'?'Net ':'')+s+fmt(Math.abs(val))+' ('+s+Math.abs(p).toFixed(1)+'%)'; } } } },
           scales:{ x:{ grid:{color:'#eef1f5'}, ticks:{ callback:v=>fmt(v) } }, y:{ grid:{display:false}, ticks:{ font:{size:10} } } } }
       });
     }
