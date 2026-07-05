@@ -213,6 +213,7 @@
           <div class="text-xs opacity-90">Total per month</div>
           <div class="text-3xl font-black" id="totalMonthly">—</div>
           <div class="text-xs opacity-90 mt-1">≈ <span id="totalAnnual">—</span> / year</div>
+          <div class="text-xs font-semibold mt-1" id="totalDelta"></div>
         </div>
         <div class="flex items-center gap-2 mt-3 text-xs">
           <span class="text-slate-500">Webex pricing:</span>
@@ -230,6 +231,20 @@
         <div class="mt-4"><canvas id="chart" height="180"></canvas></div>
         <div id="resultRows" class="mt-4 space-y-1 text-sm"></div>
         <div class="mt-3 pt-3 border-t text-xs text-slate-500" id="perInteraction"></div>
+        <div class="mt-3 pt-3 border-t">
+          <div class="flex items-center gap-2">
+            <button type="button" class="tool-btn" id="btnFreeze">📌 Freeze baseline</button>
+            <button type="button" class="tool-btn hidden" id="btnClearBase">Clear</button>
+            <span id="baseInfo" class="text-xs text-slate-400 ml-auto"></span>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-1">Freeze the current cost as a baseline, then change any input or provider to see the impact below.</p>
+          <div id="compareBox" class="mt-3 hidden">
+            <div class="text-xs font-semibold text-slate-700 mb-1">Change by channel <span class="text-slate-400 font-normal">(current − baseline)</span></div>
+            <div style="height:150px"><canvas id="compareChart"></canvas></div>
+            <div class="text-xs font-semibold text-slate-700 mt-3 mb-1">What changed</div>
+            <div id="compareRows" class="space-y-1 text-xs"></div>
+          </div>
+        </div>
       </section>
     </div>
   </div>
@@ -504,7 +519,7 @@ const TP = [
 // Webex AI Assistant / AI QM which are the only provider for their touchpoints).
 const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
 const SCHEMA_VERSION = 11;
-const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true };
+const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, baseline:null };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
 TP.forEach(t=>{ state.prov[t.id]=t.prov; state.on[t.id]=t.on; });
@@ -855,6 +870,7 @@ document.getElementById('mToggle').addEventListener('change',e=>{ if(modalTp){ s
 
 /* ============================ UPDATE ============================ */
 let chart;
+let compareChart=null;
 function update(){
   const {rows,byCh,total,unitTotals,c}=calc();
   // per-touchpoint costs / units
@@ -919,12 +935,78 @@ function update(){
   renderDiagrams();
   // live Webex Unit formulas
   renderFormulas(c);
+  // baseline comparison (what-if)
+  renderCompare(rows, byCh, total);
   // input validation warnings (live, shown in panel and wizard)
   const warns=validateInputs();
   const wb=document.getElementById('inputWarnings'); if(wb) wb.innerHTML=warnHtml(warns);
   const ww=document.getElementById('wizWarn'); if(ww) ww.innerHTML=warnHtml(warns);
   const vaEl=document.querySelector('[data-inp="voiceAgentCalls"]');
   if(vaEl) vaEl.classList.toggle('invalid', (state.inp.voiceAgentCalls||0) > (state.inp.voiceBotCalls||0));
+}
+
+/* ============================ BASELINE / WHAT-IF COMPARISON ============================ */
+// Capture the current cost structure as a baseline to compare against.
+function snapshot(){
+  const {rows,byCh,total}=calc();
+  const byId={}; rows.forEach(r=>{ byId[r.id]={label:r.label,prov:r.prov,channel:r.channel,cost:r.cost}; });
+  return { total, byCh:{...byCh}, byId, mode:state.commitMode, at:new Date().toISOString() };
+}
+function freezeBaseline(){ state.baseline=snapshot(); update(); }
+function clearBaseline(){ state.baseline=null; update(); }
+// Render the net delta, per-channel diverging bar chart and the ranked list of changed touchpoints.
+function renderCompare(rows,byCh,total){
+  const base=state.baseline;
+  const dEl=document.getElementById('totalDelta');
+  const box=document.getElementById('compareBox');
+  const bi=document.getElementById('baseInfo');
+  const fz=document.getElementById('btnFreeze'), cl=document.getElementById('btnClearBase');
+  if(!base){
+    if(dEl){ dEl.textContent=''; }
+    if(box) box.classList.add('hidden');
+    if(cl) cl.classList.add('hidden');
+    if(bi) bi.textContent='';
+    if(fz) fz.textContent='📌 Freeze baseline';
+    if(compareChart){ compareChart.destroy(); compareChart=null; }
+    return;
+  }
+  if(cl) cl.classList.remove('hidden');
+  if(fz) fz.textContent='📌 Re-freeze';
+  if(bi) bi.textContent='baseline '+fmt(base.total)+'/mo';
+  // net delta on the hero
+  const d=total-base.total, pct=base.total ? d/base.total*100 : 0;
+  if(dEl){
+    if(Math.abs(d)<0.5){ dEl.textContent='● no change vs baseline'; dEl.className='text-xs font-semibold mt-1 opacity-90'; }
+    else { const down=d<0; dEl.textContent=(down?'▼ ':'▲ ')+fmt(Math.abs(d))+' ('+(d>0?'+':'−')+Math.abs(pct).toFixed(1)+'%) vs baseline';
+      dEl.className='text-xs font-semibold mt-1 '+(down?'text-emerald-200':'text-red-200'); }
+  }
+  if(box) box.classList.remove('hidden');
+  // per-channel diverging deltas
+  const chs=CHANNELS.filter(ch=> (byCh[ch]||0)!==0 || (base.byCh[ch]||0)!==0);
+  const labels=chs.map(ch=>CH_NAMES[ch]);
+  const data=chs.map(ch=> (byCh[ch]||0)-(base.byCh[ch]||0));
+  const colors=data.map(v=> v>0.5?'#ef4444': v<-0.5?'#00cf64':'#cbd5e1');
+  if(compareChart){ compareChart.data.labels=labels; compareChart.data.datasets[0].data=data; compareChart.data.datasets[0].backgroundColor=colors; compareChart.update(); }
+  else {
+    compareChart=new Chart(document.getElementById('compareChart'),{
+      type:'bar',
+      data:{ labels, datasets:[{ data, backgroundColor:colors, borderWidth:0, barThickness:'flex', maxBarThickness:22 }] },
+      options:{ indexAxis:'y', maintainAspectRatio:false, animation:{duration:250}, plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label:it=>(it.parsed.x>=0?'+':'−')+fmt(Math.abs(it.parsed.x)) } } },
+        scales:{ x:{ grid:{color:'#eef1f5'}, ticks:{ callback:v=>fmt(v) } }, y:{ grid:{display:false} } } }
+    });
+  }
+  // ranked list of touchpoints that changed
+  const curById={}; rows.forEach(r=>{ curById[r.id]=r; });
+  const ids=new Set([...Object.keys(base.byId), ...rows.map(r=>r.id)]);
+  const changes=[...ids].map(id=>{ const b=base.byId[id], cr=curById[id]; const bc=b?b.cost:0, cc=cr?cr.cost:0;
+    return { lbl:(cr&&cr.label)||(b&&b.label)||id, prov:(cr&&cr.prov)||(b&&b.prov)||'', ch:(cr&&cr.channel)||(b&&b.channel), bc, cc, d:cc-bc }; })
+    .filter(x=>Math.abs(x.d)>=0.5).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d));
+  const cr=document.getElementById('compareRows');
+  if(cr) cr.innerHTML = changes.length ? changes.map(x=>
+    `<div class="flex justify-between gap-2"><span class="flex items-center gap-1.5 min-w-0"><span class="inline-block w-2 h-2 rounded-full shrink-0" style="background:${CH_COLORS[x.ch]||'#94a3b8'}"></span><span class="truncate">${x.lbl} <span class="text-slate-400">· ${x.prov}</span></span></span>`+
+    `<span class="shrink-0 tabular-nums ${x.d<0?'text-emerald-600':'text-red-600'}">${x.d<0?'▼':'▲'} ${fmt(Math.abs(x.d))} <span class="text-slate-400">(${fmt(x.bc)}→${fmt(x.cc)})</span></span></div>`
+  ).join('') : '<div class="text-slate-400">No line-item changes yet — adjust an input or provider.</div>';
 }
 
 // Render a validation list (array of {level,msg}) as coloured notice rows.
@@ -1097,7 +1179,7 @@ function buildReport(){
 }
 
 function saveData(){
-  const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm };
+  const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm, baseline:state.baseline };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -1118,6 +1200,7 @@ function loadData(file){
       if(d.commitMode==='commit'||d.commitMode==='overage') state.commitMode=d.commitMode;
       if(typeof d.needAssistant==='boolean') state.needAssistant=d.needAssistant;
       if(typeof d.needQm==='boolean') state.needQm=d.needQm;
+      state.baseline = (d.baseline && typeof d.baseline.total==='number' && d.baseline.byCh && d.baseline.byId) ? d.baseline : null;
       applyAgentAi();
       renderInputs(); renderTouchpoints(); renderRates(); update();
       // Schema migration: inputs the current version expects but the file did not include.
@@ -1280,6 +1363,8 @@ document.addEventListener('click',e=>{
   if(g){ applyGuess(g.dataset.guess); return; }
   if(e.target.id==='btnSave'){ saveData(); return; }
   if(e.target.id==='btnPdf'){ buildReport(); return; }
+  if(e.target.id==='btnFreeze'){ freezeBaseline(); return; }
+  if(e.target.id==='btnClearBase'){ clearBaseline(); return; }
   if(e.target.id==='btnLoad'){ document.getElementById('fileLoad').click(); return; }
   if(e.target.id==='btnResetAll'){ resetAll(); return; }
   const cmBtn=e.target.closest('[data-commit]');
