@@ -604,14 +604,19 @@ function calc(){
 }
 
 /* ============================ RENDER: inputs ============================ */
+// Emphasis baseline: a field is “changed” (and revertable) relative to the last loaded
+// config — or the app defaults before anything is loaded.
+function baseVal(k){ return (state.restore && state.restore.inp && (k in state.restore.inp)) ? state.restore.inp[k] : INPUTS[k].v; }
 function inputField(key){
   const d=INPUTS[key];
-  const changed = state.inp[key] !== d.v;
+  const bv=baseVal(key);
+  const changed = state.inp[key] !== bv;
+  const loaded = !!state.loadedName;
   return `<label class="text-xs font-medium text-slate-600 flex flex-col gap-1" data-field="${key}">
     <span class="flex items-center gap-1">
       ${d.label}
       ${d.info?`<span class="info" title="${d.info}">&#9432;</span>`:''}
-      <button type="button" class="revert-btn ${changed?'':'hidden'}" data-revert="${key}" title="Revert to default (${d.v})">↺</button>
+      <button type="button" class="revert-btn ${changed?'':'hidden'}" data-revert="${key}" title="Revert to ${loaded?'loaded':'default'} value (${bv})">↺</button>
     </span>
     <input type="number" class="num ${changed?'changed':''}" data-inp="${key}" value="${state.inp[key]}" step="${d.step||1}" min="0" ${d.suffix==='%'?'max="100"':''}>
   </label>`;
@@ -1089,9 +1094,17 @@ function syncToggles(){
 /* ============================ FIELD STATE / GUESSTIMATE / SAVE-LOAD ============================ */
 function refreshField(key){
   const wrap=document.querySelector(`[data-field="${key}"]`); if(!wrap) return;
-  const changed = state.inp[key] !== INPUTS[key].v;
+  const changed = state.inp[key] !== baseVal(key);
   wrap.querySelector('input').classList.toggle('changed', changed);
   wrap.querySelector('.revert-btn').classList.toggle('hidden', !changed);
+}
+// Transiently flash the fields whose loaded value differs from the app default —
+// a one-off reveal of what the loaded config customised, which then fades out.
+function flashLoadedDiffs(){
+  Object.keys(INPUTS).forEach(k=>{ if(INPUTS[k].hidden) return;
+    if(state.inp[k]!==INPUTS[k].v){ const el=document.querySelector(`[data-field="${k}"] input`);
+      if(el){ el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); } }
+  });
 }
 
 // Estimate LLM tokens + TTS characters from the autonomous voicebot talk time per call.
@@ -1237,9 +1250,10 @@ function loadData(file){
       if(typeof d.needQm==='boolean') state.needQm=d.needQm;
       state.baseline = (d.baseline && typeof d.baseline.total==='number' && d.baseline.byCh && d.baseline.byId) ? d.baseline : null;
       applyAgentAi();
-      renderInputs(); renderTouchpoints(); renderRates(); update();
       state.loadedName = (file && file.name) || 'loaded scenario';
       captureRestore();
+      renderInputs(); renderTouchpoints(); renderRates(); update();
+      flashLoadedDiffs();
       // Schema migration: inputs the current version expects but the file did not include.
       const fileVer = d.schema || d.version || 1;
       const missing = Object.keys(INPUTS).filter(k=>!INPUTS[k].hidden && provided[k]===undefined);
@@ -1423,7 +1437,7 @@ document.addEventListener('click',e=>{
   const o=e.target.closest('[data-open]');
   if(o){ openModal(o.dataset.open); return; }
   const rev=e.target.closest('[data-revert]');
-  if(rev){ const k=rev.dataset.revert; state.inp[k]=INPUTS[k].v; const inp=document.querySelector(`[data-field="${k}"] input`); if(inp) inp.value=state.inp[k]; refreshField(k); update(); return; }
+  if(rev){ const k=rev.dataset.revert; state.inp[k]=baseVal(k); const inp=document.querySelector(`[data-field="${k}"] input`); if(inp) inp.value=state.inp[k]; refreshField(k); update(); return; }
   const g=e.target.closest('[data-guess]');
   if(g){ applyGuess(g.dataset.guess); return; }
   if(e.target.id==='btnSave'){ saveData(); return; }
