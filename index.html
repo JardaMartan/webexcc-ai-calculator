@@ -6,6 +6,14 @@
 <title>Webex Contact Center · AI Cost Calculator</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<!-- Momentum Design: fonts + design tokens (progressive enhancement; the app ships token fallbacks so it renders even if these fail) -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@momentum-design/fonts@latest/dist/css/fonts.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@momentum-design/tokens@latest/dist/css/core/complete.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@momentum-design/tokens@latest/dist/css/typography/complete.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@momentum-design/tokens@latest/dist/css/elevation/complete.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@momentum-design/tokens@latest/dist/css/theme/webex/light-stable.css">
+<script type="module" src="https://cdn.jsdelivr.net/npm/@momentum-design/components@latest/dist/browser/index.js"></script>
 <style>
   :root { --wx: #00cf64; --wx-d: #009e4e; --ink: #0b1220; }
   body { background:#f6f8fb; color:var(--ink); }
@@ -61,8 +69,57 @@
     .rpt-avoid { break-inside:avoid; }
   }
 </style>
+
+<!-- ============================ MOMENTUM DESIGN THEME ============================ -->
+<!-- Applies Momentum's design language (tokens, typography, radii, elevation, component styling)
+     on top of the existing markup. Uses Momentum tokens where available with safe fallbacks. -->
+<style>
+  :root{
+    /* Momentum brand + semantic palette (Webex theme) */
+    --mds-green:#00cf64; --mds-green-d:#009e4e;
+    --mds-blue:#0d6cf2; --mds-red:#d4371c; --mds-amber:#e5a000; --mds-purple:#8b5cf6;
+    --wx: var(--mds-color-theme-common-text-accent-normal, var(--mds-green));
+    --wx-d:#009e4e;
+    --ink: var(--mds-color-theme-text-primary-normal, #131c26);
+    --mds-surface: var(--mds-color-theme-background-solid-primary-normal, #ffffff);
+    --mds-bg: var(--mds-color-theme-background-solid-secondary-normal, #f4f5f7);
+    --mds-border: var(--mds-color-theme-outline-secondary-normal, #e0e2e6);
+    --mds-muted: var(--mds-color-theme-text-secondary-normal, #66707a);
+    --mds-radius: 8px; --mds-radius-lg: 12px;
+    --mds-font: "Momentum","CiscoSansTT Regular","CiscoSans",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  html, body { font-family:var(--mds-font); background:var(--mds-bg); color:var(--ink); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  h1,h2,h3 { letter-spacing:-.012em; }
+  /* Surfaces / elevation */
+  .card { border-radius:var(--mds-radius-lg); border-color:var(--mds-border); box-shadow:0 1px 2px rgba(19,28,38,.05), 0 6px 20px rgba(19,28,38,.04); }
+  header.bg-white, header.border-b { border-color:var(--mds-border) !important; box-shadow:0 1px 0 var(--mds-border); }
+  /* Buttons — Momentum pill buttons */
+  .tool-btn { display:inline-flex; align-items:center; gap:6px; border-radius:999px; border:1px solid var(--mds-border); background:#fff; color:var(--ink); font-weight:600; padding:6px 14px; transition:background .15s,border-color .15s,box-shadow .15s; }
+  .tool-btn:hover { background:#eef1f4; border-color:#c8ccd2; }
+  .tool-btn:active { background:#e4e8ec; }
+  .tool-btn.primary { background:var(--wx); border-color:var(--wx); color:#04231a; }
+  .tool-btn.primary:hover { background:var(--wx-d); border-color:var(--wx-d); color:#fff; }
+  /* Inputs / selects — Momentum fields */
+  input[type=number], select { border-radius:var(--mds-radius); border:1px solid var(--mds-border); background:#fff; color:var(--ink); }
+  input[type=number]:focus, select:focus { outline:2px solid rgba(0,207,100,.45); border-color:var(--wx); }
+  /* Chips / pills — Momentum badge */
+  .pill { border-radius:999px; background:#eaf7f0; color:var(--wx-d); border:1px solid #c9ebd8; font-weight:600; letter-spacing:.01em; }
+  /* Dialogs */
+  .modal-bg { background:rgba(19,28,38,.55); backdrop-filter:blur(2px); }
+  /* Section number badges & the AI logo keep the brand accent */
+  .revert-btn { color:var(--mds-amber); }
+  /* Segmented control (Committed/Overage) rounded like Momentum */
+  #btnCommit, #btnOverage { transition:.15s; }
+  /* Momentum icon web component sizing when present */
+  mdc-icon { display:inline-flex; vertical-align:-2px; }
+  /* Layout-safe: if the alpha web components fail to upgrade, wrappers must not affect layout */
+  mdc-themeprovider, mdc-iconprovider { display:contents; }
+</style>
 </head>
 <body class="min-h-screen">
+<!-- Momentum theme + icon context. display:contents keeps layout intact even if the alpha module fails to load. -->
+<mdc-themeprovider class="mds-theme-stable-lightWebex" themeclass="mds-theme-stable-lightWebex">
+<mdc-iconprovider url="https://cdn.jsdelivr.net/npm/@momentum-design/icons@latest/dist/svg" file-extension="svg" length-unit="rem">
 
 <!-- Header -->
 <header class="bg-white border-b border-[#e6eaf0]">
@@ -73,8 +130,8 @@
       <p class="text-xs text-slate-500">Estimate monthly AI spend across voice, chat and email flows. Click any AI touchpoint in a diagram for details.</p>
     </div>
     <div class="ml-auto flex items-center gap-2">
-      <button type="button" id="btnPdf" class="tool-btn">🖨 Export PDF</button>
-      <button type="button" id="btnWizard" class="tool-btn primary">⚙ Setup wizard</button>
+      <button type="button" id="btnPdf" class="tool-btn"><mdc-icon name="print-bold" size="1.1"></mdc-icon>Export PDF</button>
+      <button type="button" id="btnWizard" class="tool-btn primary"><mdc-icon name="sparkle-bold" size="1.1"></mdc-icon>Setup wizard</button>
     </div>
   </div>
 </header>
@@ -99,9 +156,9 @@
         <span class="w-6 h-6 rounded-full text-white text-xs font-bold flex items-center justify-center" style="background:var(--wx)">1</span>
         <h2 class="font-bold text-base">Data inputs &amp; volumes</h2>
         <div class="ml-auto flex items-center gap-2">
-          <button type="button" class="tool-btn" id="btnSave">↓ Save</button>
-          <button type="button" class="tool-btn" id="btnLoad">↑ Load</button>
-          <button type="button" class="tool-btn" id="btnRevert" title="Revert all inputs, providers and pricing back to the last loaded file (or the starting values if nothing has been loaded).">↺ Revert changes</button>
+          <button type="button" class="tool-btn" id="btnSave"><mdc-icon name="download-bold" size="1.05"></mdc-icon>Save</button>
+          <button type="button" class="tool-btn" id="btnLoad"><mdc-icon name="upload-bold" size="1.05"></mdc-icon>Load</button>
+          <button type="button" class="tool-btn" id="btnRevert" title="Revert all inputs, providers and pricing back to the last loaded file (or the starting values if nothing has been loaded)."><mdc-icon name="reset-bold" size="1.05"></mdc-icon>Revert changes</button>
           <input type="file" id="fileLoad" accept="application/json,.json" class="hidden">
         </div>
       </div>
@@ -1560,5 +1617,7 @@ update();
 captureRestore();
 if(!localStorage.getItem('wxCalcWizardSeen')) openWizard();
 </script>
+</mdc-iconprovider>
+</mdc-themeprovider>
 </body>
 </html>
