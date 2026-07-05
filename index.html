@@ -1338,57 +1338,30 @@ function wizRate(prov,key){
   </label>`;
 }
 const WIZ_STEPS = [
- { title:'Welcome — channels in scope', render:()=>`
-   <p class="text-sm text-slate-600 mb-4">This quick setup captures the essentials: channels, automation AI, volumes, the automation/agent split, and Webex Unit pricing. Rerun it anytime with <b>⚙ Setup wizard</b>, or edit any field directly afterwards.</p>
-   <p class="text-sm font-semibold mb-2">Which channels do you want to include?</p>
-   <div class="grid grid-cols-2 gap-2">
+ { title:'Channels & preferred AI', render:()=>`
+   <p class="text-sm text-slate-600 mb-3">Pick the channels to estimate and your <b>preferred AI provider</b>. Everything else starts from sensible defaults — you can refine any field, provider or price directly afterwards.</p>
+   <p class="text-sm font-semibold mb-1">Channels</p>
+   <div class="grid grid-cols-2 gap-2 mb-4">
      ${['voice','outbound','chat','email'].map(ch=>`<label class="flex items-center gap-2 p-2 rounded-lg border border-slate-200 text-sm"><input type="checkbox" data-wiz-ch="${ch}" ${wiz.channels[ch]?'checked':''}> ${CH_LABEL[ch]}</label>`).join('')}
-   </div>` },
- { title:'AI provider selection', render:()=>{
-     const allSel = SELECTABLE_PROVIDERS.every(id=>wiz.providers[id]);
-     const sel = SELECTABLE_PROVIDERS.filter(id=>wiz.providers[id]);
-     return `
-     <p class="text-sm text-slate-600 mb-3">Select which AI providers are available to your contact center, then pick a <b>preferred provider</b>. The preferred provider is used wherever it's supported; every touchpoint's dropdown is limited to your selected providers.</p>
-     <label class="flex items-center gap-2 p-2 mb-1 text-sm font-semibold"><input type="checkbox" data-wiz-all ${allSel?'checked':''}> Select all</label>
-     <div class="grid grid-cols-2 gap-2">
-       ${SELECTABLE_PROVIDERS.map(id=>`<label class="flex items-center gap-2 p-2 rounded-lg border ${wiz.providers[id]?'border-[color:var(--wx)] bg-[#eef7f0]':'border-slate-200'} text-sm"><input type="checkbox" data-wiz-prov="${id}" ${wiz.providers[id]?'checked':''}> ${PROVIDERS[id].name}</label>`).join('')}
-     </div>
-     <div class="mt-4">
-       <label class="text-sm font-semibold">Preferred provider</label>
-       <select data-wiz-preferred class="block mt-1 text-sm">${sel.length?sel.map(id=>`<option value="${id}" ${wiz.preferred===id?'selected':''}>${PROVIDERS[id].name}</option>`).join(''):'<option value="">— select a provider above —</option>'}</select>
-       <p class="text-xs text-slate-500 mt-1">Scripted IVR/flows and AI Assistant / AI Quality Management always use their native Webex product regardless of this choice.</p>
-     </div>`; } },
+   </div>
+   <label class="text-sm font-semibold">Preferred AI provider</label>
+   <select data-wiz-preferred class="block mt-1 text-sm">${SELECTABLE_PROVIDERS.map(id=>`<option value="${id}" ${wiz.preferred===id?'selected':''}>${PROVIDERS[id].name}</option>`).join('')}</select>
+   <p class="text-xs text-slate-500 mt-1">Used wherever it's supported. Scripted flows and AI Assistant / Quality Management always use their native Webex product. You can change the provider per touchpoint later.</p>` },
  { title:'Monthly volumes', render:()=>{ const f=[];
-     if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-3 gap-3">'+['voiceBotCalls','voiceBotMin','voiceBotAutoPct','voiceAgentCalls','voiceAgentMin'].map(wizField).join('')+'</div>');
-     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-3 gap-3">'+['obDirectCalls','obBotCalls','obBotTransferPct','obBotMin','obBotAutoPct','obAgentMin'].map(wizField).join('')+'</div>');
-     if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-3 gap-3">'+['chatVolume','avgCustomerMsgs','avgAgentMsgs','chatAutoMix'].map(wizField).join('')+'</div>');
-     if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-3 gap-3">'+['emailVolume','avgEmailInTok','avgResponseTok','avgSummaryTok'].map(wizField).join('')+'</div>'
-       +'<div class="text-xs font-semibold text-slate-700 mt-2 mb-1">Email attachments</div><div class="grid grid-cols-3 gap-3">'+['pctWithAttach','avgAttach','avgAttachSizeMB','mbPerPage'].map(wizField).join('')+'</div>');
-     return f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'; } },
- { title:'Automation vs. agent split', render:()=>{ const sec=[];
-     if(wiz.channels.voice) sec.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice — routing (calls / month)</div><div class="grid grid-cols-2 gap-3">'+wizField('voiceBotCalls','Handled by voicebot')+wizField('voiceAgentCalls','Reach a live agent')+'</div>');
-     if(wiz.channels.outbound) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound — routing</div><div class="grid grid-cols-3 gap-3">'+wizField('obDirectCalls','Direct to agent (calls/mo)')+wizField('obBotCalls','Via voicebot (calls/mo)')+wizField('obBotTransferPct','Of voicebot calls, % → agent')+'</div><p class="text-[11px] text-slate-500 mt-1">The rest of the voicebot calls self-serve. Total agent calls = direct + (voicebot × transfer%).</p>');
-     if(wiz.channels.chat) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Digital / chat</div><div class="grid grid-cols-2 gap-3">'+wizField('chatFwd','Chat — % forwarded to agent')+'</div>');
-     if(wiz.channels.email) sec.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-2 gap-3">'+wizField('pctEscalated','Email — % forwarded to agent')+'</div>');
-     return `<p class="text-sm text-slate-600 mb-3">Set how interactions split between automation and a live agent. Voice &amp; outbound use monthly call counts (voicebot vs live-agent); chat &amp; email use a forwarded percentage. Agent-side AI cost applies only to the live-agent / forwarded share.</p>
-       ${sec.join('')||'<span class="text-sm text-slate-500">No channels selected.</span>'}
-       <div class="text-xs font-semibold text-slate-700 mt-4 mb-1">AI Assistant / Quality Management coverage</div>
-       <div class="grid grid-cols-2 gap-3">${wizField('assistCoverage')}${wizField('qmCoverage')}</div>`; } },
- { title:'Webex & Cisco-billed pricing', render:()=>{
-     const ccai = wiz.providers.googleCcai ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Google CCAI — Dialogflow CX (via Cisco): Flows = scripted, Playbooks = LLM</div><div class="grid grid-cols-2 gap-3">${wizRate('googleCcai','vaFlowsVoicePerSec')}${wizRate('googleCcai','vaFlowsRequest')}${wizRate('googleCcai','vaVoicePerSec')}${wizRate('googleCcai','vaRequest')}</div>` : '';
-     const byo = wiz.providers.byova ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">BYOVA — Bring Your Own Virtual Agent (A-FLEX-BYO): 1 Unit = 2,000 voice minutes</div><div class="grid grid-cols-2 gap-3">${wizRate('byova','commit')}${wizRate('byova','overage')}</div>` : '';
-     const tpv = wiz.providers.tpaiVoice ? `<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Third-Party AI Voice (via Webex): 1 Unit = 250 min (1,000 × 15-second increments)</div><div class="grid grid-cols-2 gap-3">${wizRate('tpaiVoice','commit')}${wizRate('tpaiVoice','overage')}</div>` : '';
-     return `
-     <p class="text-sm text-slate-600 mb-3">Enter your <b>Webex GPL Unit prices</b> (Committed &amp; Overage) and any Cisco-billed rates. Choose Committed or Overage in the Results panel. Third-party token rates can be tuned later in the Pricing panel.</p>
-     <div class="text-xs font-semibold text-slate-700 mb-1">Webex — price per Unit (Committed / Overage)</div>
-     <div class="grid grid-cols-2 gap-3">
-       ${wizRate('webexAgent','commit')}${wizRate('webexAgent','overage')}
-       ${wizRate('webexBundle','commit')}${wizRate('webexBundle','overage')}
-       ${wizRate('webexAssistant','commit')}${wizRate('webexAssistant','overage')}
-       ${wizRate('webexQM','commit')}${wizRate('webexQM','overage')}
-     </div>${ccai}${byo}${tpv}`; } },
+     if(wiz.channels.voice) f.push('<div class="text-xs font-semibold text-slate-700 mt-1 mb-1">Inbound voice</div><div class="grid grid-cols-2 gap-3">'+['voiceBotCalls','voiceBotMin','voiceAgentCalls','voiceAgentMin'].map(wizField).join('')+'</div>');
+     if(wiz.channels.outbound) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Outbound</div><div class="grid grid-cols-2 gap-3">'+['obDirectCalls','obBotCalls','obBotMin','obAgentMin'].map(wizField).join('')+'</div>');
+     if(wiz.channels.chat) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Chat</div><div class="grid grid-cols-2 gap-3">'+['chatVolume','avgCustomerMsgs'].map(wizField).join('')+'</div>');
+     if(wiz.channels.email) f.push('<div class="text-xs font-semibold text-slate-700 mt-3 mb-1">Email</div><div class="grid grid-cols-2 gap-3">'+['emailVolume'].map(wizField).join('')+'</div>');
+     return `<p class="text-sm text-slate-600 mb-3">Just the headline monthly numbers. Automation splits, transfers, coverage %, token sizes and pricing use defaults you can refine later.</p>`+(f.join('')||'<p class="text-sm text-slate-500">No channels selected — go back and pick at least one.</p>'); } },
  { title:'All set', render:()=>`
-   <p class="text-sm text-slate-600">You're ready. Your selections have been applied to the flows and results. Tweak any field directly (changed fields are highlighted), and use <b>↓ Save</b> to keep your scenario as a file. Reopen this wizard anytime from <b>⚙ Setup wizard</b>.</p>` }
+   <p class="text-sm text-slate-600 mb-2">That's it — your estimate is ready. From here you can:</p>
+   <ul class="text-sm text-slate-600 list-disc pl-5 space-y-1">
+     <li>Fine-tune any field directly — changed fields are highlighted.</li>
+     <li>Set <b>scripted / autonomous</b> &amp; <b>transfer</b> splits and <b>AI Assistant / Quality Management</b> coverage in the inputs.</li>
+     <li>Use <b>✨ Guesstimate</b> to fill 3rd-party bot token sizes from your call durations.</li>
+     <li>Tune <b>pricing</b> in the Pricing panel and pick a provider per touchpoint.</li>
+     <li><b>↓ Save</b> your scenario, or <b>📌 Freeze baseline</b> to compare what-if changes.</li>
+   </ul>` }
 ];
 function wizRender(){
   const s=WIZ_STEPS[wiz.step];
