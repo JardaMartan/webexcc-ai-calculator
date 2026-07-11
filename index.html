@@ -559,8 +559,8 @@ const TP = [
   // --- WEBEX AGENT-FACING AI (consumption Units) — pick Bundle / AI Assistant / AI Quality Management ---
   { id:'s_agentai', channel:'subs', label:'Agent-facing Webex AI (Units)', on:true, prov:'webexBundle',
     providers:['webexBundle','webexAssistant','webexQM'],
-    billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI Quality Management</b> on the flow diagrams &mdash; enabling both applies the discounted <b>bundle</b> price, which is a <b>single meter covering both products</b> per interaction (one Unit consumed, not two), at the wider of the two coverage %. A single product bills only its own Units. AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI Quality Management provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
-    compute:(c,r,p)=>{ const units = p==='webexBundle' ? c.bundleUnits : (p==='webexAssistant' ? c.assistUnits : c.qmUnits); return { units, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:units*wxUnit(r) }; } }
+    billing:'Agent-facing Webex AI, billed as <b>consumption Units</b> on human-handled interactions: <b>1 Unit = 1,500 covered agent-voice minutes</b> + <b>1 Unit = 1,000 covered digital sessions</b>. Coverage is taken from the scenario: enable <b>AI Assistant</b> and/or <b>AI Quality Management</b> on the flow diagrams &mdash; enabling both applies the discounted <b>bundle</b> price, which is a <b>single meter covering both products</b> per interaction (one Unit consumed, not two), at the wider of the two coverage %. A single product bills only its own Units. When both are enabled you can switch <b>Pricing</b> to <b>Separate</b> to bill <b>AI Assistant</b> and <b>AI Quality Management</b> independently &mdash; each on its own coverage % and per-product Unit price (useful when, e.g., Assistant usage is low but Quality Management usage is high). AI Assistant provides real-time transcript, agent answers, suggested responses and topic detection; AI Quality Management provides auto-scoring, sentiment, compliance and coaching. Price uses the Committed or Overage rate selected in Results.',
+    compute:(c,r,p)=>{ if(p==='webexBundle' && state.agentAiSeparate){ const ac=c.assistUnits*wxUnit(state.rates.webexAssistant), qc=c.qmUnits*wxUnit(state.rates.webexQM); return { units:c.assistUnits+c.qmUnits, product:'separate', cost:ac+qc, assistCost:ac, qmCost:qc }; } const units = p==='webexBundle' ? c.bundleUnits : (p==='webexAssistant' ? c.assistUnits : c.qmUnits); return { units, product: p==='webexBundle'?'bundle':(p==='webexAssistant'?'assistant':'qm'), cost:units*wxUnit(r) }; } }
 ];
 
 /* ============================ STATE ============================ */
@@ -568,7 +568,7 @@ const TP = [
 // Webex AI Assistant / AI Quality Management which are the only provider for their touchpoints).
 const SELECTABLE_PROVIDERS = ['webexAgent','googleCcai','googleCcaiWx','byova','tpaiVoice','openai','google','anthropic','azure','aws'];
 const SCHEMA_VERSION = 12;
-const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, baseline:null, restore:null, loadedName:null };
+const state = { inp:{}, rates:{}, prov:{}, on:{}, allowedProviders:[...SELECTABLE_PROVIDERS], commitMode:'commit', needAssistant:true, needQm:true, agentAiSeparate:false, baseline:null, restore:null, loadedName:null };
 for(const k in INPUTS) state.inp[k] = INPUTS[k].v;
 for(const p in PROVIDERS) state.rates[p] = {...PROVIDERS[p].rates};
 TP.forEach(t=>{ state.prov[t.id]=t.prov; state.on[t.id]=t.on; });
@@ -652,7 +652,8 @@ function calc(){
     const cost = res.cost || 0;
     byCh[t.channel]+=cost;
     if(res.units && res.product){ const b = res.product==='agent'?'agent':(res.product==='voiceai'?'voiceai':'agentAi'); unitTotals[b]+=res.units; }
-    rows.push({ id:t.id, label:t.label, channel:t.channel, prov:PROVIDERS[p].name, cost, units:res.units });
+    const provName = (t.id==='s_agentai' && p==='webexBundle' && state.agentAiSeparate) ? 'Webex AI Assistant + Quality Management (separate)' : PROVIDERS[p].name;
+    rows.push({ id:t.id, label:t.label, channel:t.channel, prov:provName, cost, units:res.units, assistCost:res.assistCost, qmCost:res.qmCost });
   });
   const total = Object.values(byCh).reduce((a,b)=>a+b,0);
   return { rows, byCh, total, unitTotals, c };
@@ -758,7 +759,7 @@ function applyAgentAi(){
 }
 function agentAiSelectorHtml(){
   const a=state.needAssistant, q=state.needQm;
-  const mode=(a&&q)?'AI Assistant + Quality Management (bundle)':(a?'AI Assistant only':(q?'AI Quality Management only':'none — not included'));
+  const mode=(a&&q)?('AI Assistant + Quality Management ('+(state.agentAiSeparate?'separate':'bundle')+')'):(a?'AI Assistant only':(q?'AI Quality Management only':'none — not included'));
   return `<div class="p-2 rounded-lg border border-slate-100 bg-slate-50/60" data-row="s_agentai">
     <div class="flex flex-wrap items-center gap-4">
       <span class="text-sm font-medium">Coverage (from scenario):</span>
@@ -767,7 +768,15 @@ function agentAiSelectorHtml(){
       <span class="tp-link cursor-pointer underline decoration-dotted text-xs" data-open="s_agentai">how it's billed</span>
       <span class="ml-auto text-sm font-semibold" data-cost="s_agentai">—</span>
     </div>
-    <p class="text-xs text-slate-500 mt-1">Coverage: <b>${mode}</b> — set by enabling the <b>AI Assistant</b> / <b>AI Quality Management</b> boxes in the flow diagrams above (click to toggle). Enabling both applies the discounted <b>bundle</b> price.</p>
+    ${(a&&q)?`<div class="flex flex-wrap items-center gap-2 mt-2">
+      <span class="text-xs font-medium text-slate-600">Pricing:</span>
+      <div class="inline-flex rounded-md overflow-hidden border border-slate-200 text-xs">
+        <button type="button" data-aimode="bundle" id="btnAiBundle" class="px-2.5 py-1 font-semibold">Bundle</button>
+        <button type="button" data-aimode="separate" id="btnAiSeparate" class="px-2.5 py-1 font-semibold border-l border-slate-200">Separate</button>
+      </div>
+      <span class="text-xs text-slate-400">Separate = AI Assistant &amp; Quality Management billed independently at their own coverage (useful when their usage differs).</span>
+    </div>`:''}
+    <p class="text-xs text-slate-500 mt-1">Coverage: <b>${mode}</b> — set by enabling the <b>AI Assistant</b> / <b>AI Quality Management</b> boxes in the flow diagrams above (click to toggle). ${(a&&q)?'With both enabled, choose <b>Bundle</b> (one discounted meter at the wider coverage) or <b>Separate</b> (each product priced on its own coverage).':'Enabling both applies the discounted <b>bundle</b> price.'}</p>
   </div>`;
 }
 
@@ -1003,6 +1012,10 @@ function update(){
   const bc=document.getElementById('btnCommit'), bo=document.getElementById('btnOverage');
   if(bc&&bo){ bc.style.background=cm==='commit'?'var(--wx)':'#fff'; bc.style.color=cm==='commit'?'#fff':'#334155';
     bo.style.background=cm==='overage'?'var(--wx)':'#fff'; bo.style.color=cm==='overage'?'#fff':'#334155'; }
+  const abn=document.getElementById('btnAiBundle'), asp=document.getElementById('btnAiSeparate');
+  if(abn&&asp){ const sep=state.agentAiSeparate;
+    abn.style.background=!sep?'var(--wx)':'#fff'; abn.style.color=!sep?'#fff':'#334155';
+    asp.style.background=sep?'var(--wx)':'#fff'; asp.style.color=sep?'#fff':'#334155'; }
   // totals
   document.getElementById('totalMonthly').textContent=fmt(total);
   document.getElementById('totalAnnual').textContent=fmt(total*12);
@@ -1028,6 +1041,7 @@ function update(){
       const p=state.prov['s_agentai'];
       if(p==='webexAssistant') cat.assist+=r.cost;
       else if(p==='webexQM') cat.qm+=r.cost;
+      else if(r.assistCost!==undefined){ cat.assist+=r.assistCost; cat.qm+=r.qmCost; } // separate: use each product's own cost
       else { cat.assist+=r.cost/2; cat.qm+=r.cost/2; } // bundle = single meter covering both; split evenly
     } else if(ASSIST_TPS.includes(r.id)) cat.assist+=r.cost;
     else if(r.channel in autoByCh) autoByCh[r.channel]+=r.cost;
@@ -1356,7 +1370,7 @@ function buildReport(){
 }
 
 function saveData(){
-  const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm, baseline:state.baseline };
+  const payload={ schema:SCHEMA_VERSION, savedAt:new Date().toISOString(), inputs:state.inp, rates:state.rates, providers:state.prov, enabled:state.on, allowedProviders:state.allowedProviders, commitMode:state.commitMode, needAssistant:state.needAssistant, needQm:state.needQm, agentAiSeparate:state.agentAiSeparate, baseline:state.baseline };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -1377,6 +1391,7 @@ function loadData(file){
       if(d.commitMode==='commit'||d.commitMode==='overage') state.commitMode=d.commitMode;
       if(typeof d.needAssistant==='boolean') state.needAssistant=d.needAssistant;
       if(typeof d.needQm==='boolean') state.needQm=d.needQm;
+      if(typeof d.agentAiSeparate==='boolean') state.agentAiSeparate=d.agentAiSeparate;
       state.baseline = (d.baseline && typeof d.baseline.total==='number' && d.baseline.byCh && d.baseline.byId) ? d.baseline : null;
       applyAgentAi();
       state.loadedName = (file && file.name) || 'loaded scenario';
@@ -1407,7 +1422,8 @@ function captureRestore(){
     allowedProviders: [...state.allowedProviders],
     commitMode: state.commitMode,
     needAssistant: state.needAssistant,
-    needQm: state.needQm
+    needQm: state.needQm,
+    agentAiSeparate: state.agentAiSeparate
   };
   const b=document.getElementById('btnRevert');
   if(b){
@@ -1427,6 +1443,7 @@ function revertToLoaded(){
   state.commitMode = r.commitMode;
   state.needAssistant = r.needAssistant;
   state.needQm = r.needQm;
+  state.agentAiSeparate = !!r.agentAiSeparate;
   applyAgentAi();
   renderInputs(); renderTouchpoints(); renderRates(); update();
 }
@@ -1569,6 +1586,8 @@ document.addEventListener('click',e=>{
   if(e.target.id==='btnRevert'){ revertToLoaded(); return; }
   const cmBtn=e.target.closest('[data-commit]');
   if(cmBtn){ state.commitMode=cmBtn.dataset.commit; update(); return; }
+  const aiBtn=e.target.closest('[data-aimode]');
+  if(aiBtn){ state.agentAiSeparate = aiBtn.dataset.aimode==='separate'; renderTouchpoints(); update(); return; }
 });
 
 /* ============================ FAST TOOLTIPS ============================ */
